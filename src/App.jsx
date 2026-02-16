@@ -1908,5 +1908,3 @@ export default function MiningGame() {
     </div>
   );
 }
-
-export default MiningGame;
