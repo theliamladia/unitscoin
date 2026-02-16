@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 const INITIAL_STATE = {
   money: 50,
   unitCoin: 0,
+  qCoin: 0,
   unitCoinPrice: 2.00,
   priceHistory: [2.00],
   canvasLevel: 1, // 1 = 100%, 2 = 75%, 3 = 50%
@@ -62,6 +63,7 @@ const COMPONENTS = {
     'ramburner': { name: 'RAMBurner', description: 'RAM Overclock Manager', price: 50, target: 'ram', ramReq: 2 },
     'bitwatcher': { name: 'BitWatcher', description: 'Mining Progress Visualizer', price: 60, target: 'display', ramReq: 8 },
     'uhrome': { name: 'Uhrome Browser', description: 'Web Browser', price: 0, target: 'browser', ramReq: 6 },
+    'black-market': { name: 'Black Market', description: 'Underground qCoin Exchange', price: 300, target: 'blackmarket', ramReq: 12 },
   },
 };
 
@@ -545,7 +547,15 @@ const ProgramRackNode = ({ id, slots, onEject, onRemoveFromRack, onStartConnecti
                 <div>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1">
-                      <span className="text-xs">{program.programType === 'uhrome' ? '🌐' : program.programType === 'bitwatcher' ? '📊' : '🔧'}</span>
+                      <span className="text-xs">
+                        {program.programType === 'uhrome'
+                          ? '🌐'
+                          : program.programType === 'bitwatcher'
+                            ? '📊'
+                            : program.programType === 'black-market'
+                              ? '☠'
+                              : '🔧'}
+                      </span>
                       <span className="text-indigo-300 text-xs font-bold">{COMPONENTS.program[program.programType]?.name || program.programType}</span>
                     </div>
                     <div className="flex gap-1">
@@ -971,15 +981,15 @@ const UhromeBrowser = ({ id, pcConnected, miningProgress, onBetUnitCoin, onSpend
 };
 
 // Program Node (Burners, BitWatcher, and Uhrome Browser)
-const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, onSetOverclock, onBetUnitCoin, onSpendMoney, onStartConnection, onEndConnection, onDisconnect }) => {
+const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCoin, onSetOverclock, onBetUnitCoin, onSpendMoney, onStartConnection, onEndConnection, onDisconnect }) => {
   const [terminalHistory, setTerminalHistory] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const terminalRef = useRef(null);
   const program = COMPONENTS.program[type];
-  const target = program?.target; // 'cpu', 'gpu', 'ram', 'display', or 'browser'
+  const target = program?.target; // 'cpu', 'gpu', 'ram', 'display', 'browser', or 'blackmarket'
 
   useEffect(() => {
-    if (target && target !== 'display' && target !== 'browser') {
+    if (target && target !== 'display' && target !== 'browser' && target !== 'blackmarket') {
       setTerminalHistory([
         { type: 'system', text: `${program?.name} v1.0 initialized` },
         { type: 'system', text: 'Type "oc help" for commands' }
@@ -1202,6 +1212,41 @@ const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, onS
         onEndConnection={onEndConnection}
         onDisconnect={onDisconnect}
       />
+    );
+  }
+
+  // Black Market view
+  if (target === 'blackmarket') {
+    return (
+      <div style={{ background: 'linear-gradient(135deg, rgba(30,8,8,0.96), rgba(10,4,4,0.98))', border: `2px solid ${pcConnected ? '#dc2626' : '#333'}`, borderRadius: '10px', padding: '12px', minWidth: '300px', boxShadow: pcConnected ? '0 0 24px rgba(220,38,38,0.25)' : 'none' }}>
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">☠</span>
+            <div>
+              <div className="text-red-400 font-bold text-xs tracking-wide">BLACK MARKET</div>
+              <div className={`text-xs ${pcConnected ? 'text-red-500' : 'text-gray-500'}`}>{pcConnected ? '● LINKED' : '○ NO PC'}</div>
+            </div>
+          </div>
+          <div className="text-xs text-red-300 font-mono">{program.ramReq}GB RAM</div>
+        </div>
+
+        <div className="flex items-center gap-2 mb-2 p-1.5 rounded bg-black/50 border border-red-900/50">
+          <Connector direction="input" color="#a855f7" connected={pcConnected} nodeId={id} connectorId="program-in" onStartConnection={onStartConnection} onEndConnection={onEndConnection} onDisconnect={onDisconnect} />
+          <span className="text-purple-300 text-xs">PC IN</span>
+        </div>
+
+        <div className="rounded p-2.5" style={{ background: 'rgba(0,0,0,0.55)', border: '1px solid rgba(220,38,38,0.45)' }}>
+          <div className="text-red-400 text-xs font-mono mb-1">ACCESS: RESTRICTED</div>
+          <div className="text-gray-300 text-xs leading-relaxed">
+            qCoin is making it's way to the market.... be very careful.
+          </div>
+          <div className="mt-2 pt-2 border-t border-red-950/60 flex items-center justify-between text-xs">
+            <span className="text-gray-500">qCoin Balance</span>
+            <span className="text-red-300 font-mono">{(qCoin || 0).toFixed(4)}</span>
+          </div>
+          <div className="mt-1 text-[10px] text-red-500 font-mono">No listings available yet.</div>
+        </div>
+      </div>
     );
   }
 
@@ -1493,7 +1538,7 @@ const loadSavedState = () => {
 export default function MiningGame() {
   const [savedState] = useState(() => loadSavedState());
   
-  const [gameState, setGameState] = useState(savedState?.gameState || INITIAL_STATE);
+  const [gameState, setGameState] = useState(savedState?.gameState ? { ...INITIAL_STATE, ...savedState.gameState } : INITIAL_STATE);
   const [nodes, setNodes] = useState(savedState?.nodes || {
     'power-grid': { type: 'power-grid', position: { x: 30, y: 40 } },
     'pc-1': { type: 'pc', position: { x: 240, y: 30 }, cpu: 'cpu-1', gpu: 'gpu-8', ram: ['ram-8', 'ram-8', null, null], cooling: null, os: 'trader-os', cpuOC: 0, gpuOC: 0, ramOC: 0, isOverheated: false, currentTemp: 25 },
@@ -1973,6 +2018,7 @@ export default function MiningGame() {
           'ramburner': { type: 'program', programType: 'ramburner', position: { x: 440 + Math.random() * 100, y: 240 + Math.random() * 100 } },
           'bitwatcher': { type: 'program', programType: 'bitwatcher', position: { x: 460 + Math.random() * 100, y: 260 + Math.random() * 100 } },
           'uhrome': { type: 'program', programType: 'uhrome', position: { x: 480 + Math.random() * 100, y: 280 + Math.random() * 100 } },
+          'black-market': { type: 'program', programType: 'black-market', position: { x: 500 + Math.random() * 100, y: 300 + Math.random() * 100 } },
         };
         
         setNodes(prev => ({ ...prev, [newId]: nodeTypes[id] }));
@@ -2129,6 +2175,10 @@ export default function MiningGame() {
               <span className="text-yellow-400 text-sm">🪙</span>
               <span className="text-yellow-400 font-mono text-sm">{gameState.unitCoin.toFixed(6)}</span>
             </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-red-400 text-sm">◈</span>
+              <span className="text-red-300 font-mono text-sm">{(gameState.qCoin || 0).toFixed(4)}</span>
+            </div>
             <button 
               onClick={resetGame}
               className={`px-2 py-0.5 rounded text-xs border ${resetConfirm ? 'bg-red-700 text-white border-red-500 animate-pulse' : 'bg-red-900/50 text-red-400 border-red-800 hover:bg-red-800/50'}`}
@@ -2222,7 +2272,7 @@ export default function MiningGame() {
                   {node.type === 'interface' && <InterfaceNode id={id} connected={connections.some(c => c.to === `${id}:display-in`)} pcData={getPCDataForInterface(id)} hasMinerConnected={hasMinerConnected(id)} programData={getProgramDataForInterface(id)} unitCoin={gameState.unitCoin} unitCoinPrice={gameState.unitCoinPrice} money={gameState.money} priceHistory={gameState.priceHistory} onBuy={handleBuy} onSell={handleSell} onSellAll={handleSellAll} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />}
                   {node.type === 'program' && (
                     <div className="relative group">
-                      <ProgramNode id={id} type={node.programType} pcConnected={connections.some(c => c.to === `${id}:program-in`)} pcData={getPCForProgram(id)} miningProgress={gameState.unitCoin} money={gameState.money} onSetOverclock={handleSetOverclock} onBetUnitCoin={(amount) => setGameState(prev => ({ ...prev, unitCoin: prev.unitCoin + amount }))} onSpendMoney={(amount) => setGameState(prev => ({ ...prev, money: prev.money - amount }))} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />
+                      <ProgramNode id={id} type={node.programType} pcConnected={connections.some(c => c.to === `${id}:program-in`)} pcData={getPCForProgram(id)} miningProgress={gameState.unitCoin} money={gameState.money} qCoin={gameState.qCoin} onSetOverclock={handleSetOverclock} onBetUnitCoin={(amount) => setGameState(prev => ({ ...prev, unitCoin: prev.unitCoin + amount }))} onSpendMoney={(amount) => setGameState(prev => ({ ...prev, money: prev.money - amount }))} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />
                       <button onClick={() => handleStoreToRack(id)} className="absolute -top-2 -right-8 w-5 h-5 rounded-full bg-indigo-600 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Store in Rack">📥</button>
                       <button onClick={() => handleDeleteNode(id)} className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-600 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Delete">✕</button>
                     </div>
@@ -2292,6 +2342,7 @@ export default function MiningGame() {
                       <ShopItem id="ramburner" type="program" name="RAMBurner" specs="OC RAM 2GB" price={50} owned={false} onBuy={handleShopBuy} alwaysBuyable />
                       <ShopItem id="bitwatcher" type="program" name="BitWatcher" specs="Progress 8GB" price={60} owned={false} onBuy={handleShopBuy} alwaysBuyable />
                       <ShopItem id="uhrome" type="program" name="Uhrome" specs="Browser 6GB" price={0} owned={false} onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="black-market" type="program" name="Black Market" specs="qCoin Exchange 12GB" price={300} owned={false} onBuy={handleShopBuy} alwaysBuyable />
                     </div>
                   </div>
 
