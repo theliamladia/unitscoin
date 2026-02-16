@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
 // Initial game state
 const INITIAL_STATE = {
@@ -1392,33 +1392,33 @@ const migrateSave = (save, fromVersion) => {
   return currentSave;
 };
 
+// Load saved state from localStorage or use defaults
+const loadSavedState = () => {
+  try {
+    const saved = localStorage.getItem('unitcoin-save');
+    if (saved) {
+      let parsed = JSON.parse(saved);
+      const saveVersion = parsed.version || 0;
+
+      // Check if migration is needed
+      if (saveVersion < SAVE_VERSION) {
+        console.log(`Save version ${saveVersion} is outdated, migrating to v${SAVE_VERSION}`);
+        parsed = migrateSave(parsed, saveVersion);
+        // Save the migrated data
+        localStorage.setItem('unitcoin-save', JSON.stringify(parsed));
+      }
+
+      return parsed;
+    }
+  } catch (e) {
+    console.log('Failed to load save:', e);
+  }
+  return null;
+};
+
 // Main Game
 export default function MiningGame() {
-  // Load saved state from localStorage or use defaults
-  const loadSavedState = () => {
-    try {
-      const saved = localStorage.getItem('unitcoin-save');
-      if (saved) {
-        let parsed = JSON.parse(saved);
-        const saveVersion = parsed.version || 0;
-        
-        // Check if migration is needed
-        if (saveVersion < SAVE_VERSION) {
-          console.log(`Save version ${saveVersion} is outdated, migrating to v${SAVE_VERSION}`);
-          parsed = migrateSave(parsed, saveVersion);
-          // Save the migrated data
-          localStorage.setItem('unitcoin-save', JSON.stringify(parsed));
-        }
-        
-        return parsed;
-      }
-    } catch (e) {
-      console.log('Failed to load save:', e);
-    }
-    return null;
-  };
-
-  const savedState = loadSavedState();
+  const [savedState] = useState(() => loadSavedState());
   
   const [gameState, setGameState] = useState(savedState?.gameState || INITIAL_STATE);
   const [nodes, setNodes] = useState(savedState?.nodes || {
@@ -1487,12 +1487,24 @@ export default function MiningGame() {
     }
   };
 
+  // Build a quick lookup map for inbound power connections.
+  const inboundPowerByNode = useMemo(() => {
+    const map = new Map();
+    connections.forEach((conn) => {
+      const [toNode, toConnector] = conn.to.split(':');
+      if (toConnector === 'power-in') {
+        map.set(toNode, conn);
+      }
+    });
+    return map;
+  }, [connections]);
+
   // Power check
   const hasPower = useCallback((nodeId, visited = new Set()) => {
     if (visited.has(nodeId)) return false;
     visited.add(nodeId);
-    
-    const conn = connections.find(c => c.to === `${nodeId}:power-in`);
+
+    const conn = inboundPowerByNode.get(nodeId);
     if (!conn) return false;
     const [fromNode] = conn.from.split(':');
     if (fromNode === 'power-grid') return true;
@@ -1501,7 +1513,7 @@ export default function MiningGame() {
       return hasPower(fromNode, visited);
     }
     return false;
-  }, [connections, nodes]);
+  }, [inboundPowerByNode, nodes]);
 
   const hasDisplay = useCallback((nodeId) => connections.some(c => c.from === `${nodeId}:display-out`), [connections]);
 
@@ -1578,15 +1590,10 @@ export default function MiningGame() {
 
   // Get program data for interface (finds programs connected to PC that's connected to this interface)
   const getProgramDataForInterface = useCallback((interfaceId) => {
-    // Find which PC/miner is connected to this interface
-    const displayConn = connections.find(c => c.to === `${interfaceId}:display-in`);
-    if (!displayConn) return null;
-    
-    const [sourceId] = displayConn.from.split(':');
-    const sourceNode = nodes[sourceId];
-    
-    if (sourceNode?.type !== 'pc') return null;
-    
+    const interfacePc = getPCDataForInterface(interfaceId);
+    if (!interfacePc) return null;
+
+    const sourceId = interfacePc.id;
     // Find all programs connected to this PC (check all program slots)
     const programs = [];
     for (let i = 0; i < 4; i++) {
@@ -1597,14 +1604,14 @@ export default function MiningGame() {
         if (programNode?.type === 'program') {
           programs.push({
             type: programNode.programType,
-            pcData: sourceNode
+            pcData: interfacePc
           });
         }
       }
     }
     
     return programs.length > 0 ? programs[0] : null; // Return first program for now
-  }, [connections, nodes]);
+  }, [connections, nodes, getPCDataForInterface]);
 
   // Calculate total wattage
   const totalWattage = Object.entries(nodes).reduce((sum, [id, node]) => {
@@ -1762,6 +1769,9 @@ export default function MiningGame() {
     if (fromConn.startsWith('program-out') && connectorId === 'program-in') {
       if (fromType === 'pc' && toType === 'program') valid = true;
     }
+    if (fromConn.startsWith('program-out') && connectorId.startsWith('rack-program-in-')) {
+      if (fromType === 'pc' && toType === 'program-rack') valid = true;
+    }
 
     if (valid) {
       setConnections(prev => [...prev.filter(c => c.to !== `${nodeId}:${connectorId}`), { from: drawingConnection.from, to: `${nodeId}:${connectorId}`, color: drawingConnection.color }]);
@@ -1797,18 +1807,25 @@ export default function MiningGame() {
   };
 
   const handleBuy = (coins) => {
-    const cost = coins * gameState.unitCoinPrice;
-    if (gameState.money >= cost) setGameState(prev => ({ ...prev, money: prev.money - cost, unitCoin: prev.unitCoin + coins }));
+    setGameState(prev => {
+      const cost = coins * prev.unitCoinPrice;
+      if (prev.money < cost) return prev;
+      return { ...prev, money: prev.money - cost, unitCoin: prev.unitCoin + coins };
+    });
   };
 
   const handleSell = (coins) => {
-    if (gameState.unitCoin >= coins) setGameState(prev => ({ ...prev, money: prev.money + coins * prev.unitCoinPrice, unitCoin: prev.unitCoin - coins }));
+    setGameState(prev => {
+      if (prev.unitCoin < coins) return prev;
+      return { ...prev, money: prev.money + coins * prev.unitCoinPrice, unitCoin: prev.unitCoin - coins };
+    });
   };
 
   const handleSellAll = () => {
-    if (gameState.unitCoin >= 0.01) {
-      setGameState(prev => ({ ...prev, money: prev.money + prev.unitCoin * prev.unitCoinPrice, unitCoin: 0 }));
-    }
+    setGameState(prev => {
+      if (prev.unitCoin < 0.01) return prev;
+      return { ...prev, money: prev.money + prev.unitCoin * prev.unitCoinPrice, unitCoin: 0 };
+    });
   };
 
   const handleShopBuy = (id, type, price) => {
@@ -1843,9 +1860,10 @@ export default function MiningGame() {
 
   const handleBuyCanvas = (level) => {
     const price = CANVAS_PRICES[level];
-    if (gameState.money >= price && gameState.canvasLevel < level) {
-      setGameState(prev => ({ ...prev, money: prev.money - price, canvasLevel: level }));
-    }
+    setGameState(prev => {
+      if (prev.money < price || prev.canvasLevel >= level) return prev;
+      return { ...prev, money: prev.money - price, canvasLevel: level };
+    });
   };
 
   // Delete a node (not allowed for power-grid, pc, interface)
