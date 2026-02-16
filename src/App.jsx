@@ -1321,13 +1321,6 @@ export default function MiningGame() {
   }, [connections, nodes]);
 
   const hasDisplay = useCallback((nodeId) => connections.some(c => c.from === `${nodeId}:display-out`), [connections]);
-  
-  const hasProgram = useCallback((nodeId) => {
-    for (let i = 0; i < 4; i++) {
-      if (connections.some(c => c.from === `${nodeId}:program-out-${i}`)) return true;
-    }
-    return false;
-  }, [connections]);
 
   // Get PC data for program nodes
   const getPCForProgram = useCallback((programId) => {
@@ -1610,8 +1603,6 @@ export default function MiningGame() {
       return { ...prev, [nodeId]: node };
     });
   };
-
-  const handleOSDrop = (nodeId, osId) => setNodes(prev => ({ ...prev, [nodeId]: { ...prev[nodeId], os: osId } }));
 
   const handleSetOverclock = (pcId, target, value) => {
     setNodes(prev => {
