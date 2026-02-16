@@ -1275,6 +1275,36 @@ const ShopItem = ({ id, type, name, specs, price, owned, onBuy, alwaysBuyable })
   );
 };
 
+// Save version - increment this when save format changes
+const SAVE_VERSION = 1;
+
+// Migration functions to update old saves to new format
+const migrations = {
+  // Example: migrate from version 0 (no version) to version 1
+  // 0: (save) => {
+  //   // Add new fields, rename things, etc.
+  //   save.gameState.newField = 'default';
+  //   return save;
+  // },
+  // 1: (save) => {
+  //   // Migrate from v1 to v2
+  //   return save;
+  // },
+};
+
+// Run all migrations from oldVersion to current version
+const migrateSave = (save, fromVersion) => {
+  let currentSave = save;
+  for (let v = fromVersion; v < SAVE_VERSION; v++) {
+    if (migrations[v]) {
+      console.log(`Migrating save from v${v} to v${v + 1}`);
+      currentSave = migrations[v](currentSave);
+    }
+  }
+  currentSave.version = SAVE_VERSION;
+  return currentSave;
+};
+
 // Main Game
 export default function MiningGame() {
   // Load saved state from localStorage or use defaults
@@ -1282,7 +1312,17 @@ export default function MiningGame() {
     try {
       const saved = localStorage.getItem('unitcoin-save');
       if (saved) {
-        const parsed = JSON.parse(saved);
+        let parsed = JSON.parse(saved);
+        const saveVersion = parsed.version || 0;
+        
+        // Check if migration is needed
+        if (saveVersion < SAVE_VERSION) {
+          console.log(`Save version ${saveVersion} is outdated, migrating to v${SAVE_VERSION}`);
+          parsed = migrateSave(parsed, saveVersion);
+          // Save the migrated data
+          localStorage.setItem('unitcoin-save', JSON.stringify(parsed));
+        }
+        
         return parsed;
       }
     } catch (e) {
@@ -1314,6 +1354,7 @@ export default function MiningGame() {
   // Auto-save to localStorage whenever state changes
   useEffect(() => {
     const saveData = {
+      version: SAVE_VERSION,
       gameState,
       nodes,
       connections,
