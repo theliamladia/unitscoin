@@ -506,7 +506,7 @@ const UhromeBrowser = ({ id, pcConnected, miningProgress, onBetUnitCoin, onSpend
   
   // YouBet Blackjack state
   const [bjGameState, setBjGameState] = useState('betting');
-  const [bet, setBet] = useState(0.1);
+  const [bet, setBet] = useState('0.10');
   const [playerHand, setPlayerHand] = useState([]);
   const [dealerHand, setDealerHand] = useState([]);
   const [bjMessage, setBjMessage] = useState('Place your bet!');
@@ -555,43 +555,46 @@ const UhromeBrowser = ({ id, pcConnected, miningProgress, onBetUnitCoin, onSpend
   };
 
   const startBJ = () => {
-    if (miningProgress < bet) { setBjMessage('Not enough UC!'); return; }
-    onBetUnitCoin(-bet);
+    const betAmount = parseFloat(bet) || 0;
+    if (betAmount <= 0) { setBjMessage('Enter a valid bet!'); return; }
+    if (miningProgress < betAmount) { setBjMessage('Not enough UC!'); return; }
+    onBetUnitCoin(-betAmount);
     const pHand = [getRandomCard(), getRandomCard()];
     const dHand = [getRandomCard(), getRandomCard()];
     setPlayerHand(pHand); setDealerHand(dHand); setBjGameState('playing');
-    if (calculateHand(pHand) === 21) { setBjMessage('BLACKJACK!'); setTimeout(() => endBJ(pHand, dHand, true), 500); }
+    if (calculateHand(pHand) === 21) { setBjMessage('BLACKJACK!'); setTimeout(() => endBJ(pHand, dHand, true, betAmount), 500); }
     else setBjMessage('Hit or Stand?');
   };
 
   const hitBJ = () => {
+    const betAmount = parseFloat(bet) || 0;
     const newHand = [...playerHand, getRandomCard()];
     setPlayerHand(newHand);
     const total = calculateHand(newHand);
     if (total > 21) { setBjMessage('BUST!'); setBjGameState('result'); setLastWin(0); }
-    else if (total === 21) standBJ(newHand);
+    else if (total === 21) standBJ(newHand, betAmount);
   };
 
-  const standBJ = (currentHand = playerHand) => {
+  const standBJ = (currentHand = playerHand, betAmount = parseFloat(bet) || 0) => {
     setBjGameState('dealer');
     let dHand = [...dealerHand];
     const dealerPlay = () => {
       if (calculateHand(dHand) < 17) { dHand = [...dHand, getRandomCard()]; setDealerHand(dHand); setTimeout(dealerPlay, 400); }
-      else endBJ(currentHand, dHand);
+      else endBJ(currentHand, dHand, false, betAmount);
     };
     setTimeout(dealerPlay, 400);
   };
 
-  const endBJ = (pHand, dHand, isBlackjack = false) => {
+  const endBJ = (pHand, dHand, isBlackjack = false, betAmount = parseFloat(bet) || 0) => {
     const pTotal = calculateHand(pHand), dTotal = calculateHand(dHand);
     setBjGameState('result');
     let winAmount = 0;
-    if (isBlackjack && dTotal !== 21) { winAmount = bet * 2.5; setBjMessage('BLACKJACK!'); }
+    if (isBlackjack && dTotal !== 21) { winAmount = betAmount * 2.5; setBjMessage('BLACKJACK!'); }
     else if (pTotal > 21) setBjMessage('Bust!');
-    else if (dTotal > 21) { winAmount = bet * 2; setBjMessage('Dealer busts!'); }
-    else if (pTotal > dTotal) { winAmount = bet * 2; setBjMessage('You win!'); }
+    else if (dTotal > 21) { winAmount = betAmount * 2; setBjMessage('Dealer busts!'); }
+    else if (pTotal > dTotal) { winAmount = betAmount * 2; setBjMessage('You win!'); }
     else if (pTotal < dTotal) setBjMessage('Dealer wins.');
-    else { winAmount = bet; setBjMessage('Push!'); }
+    else { winAmount = betAmount; setBjMessage('Push!'); }
     if (winAmount > 0) onBetUnitCoin(winAmount);
     setLastWin(winAmount);
   };
@@ -707,9 +710,15 @@ const UhromeBrowser = ({ id, pcConnected, miningProgress, onBetUnitCoin, onSpend
             {bjGameState === 'betting' && (
               <div className="space-y-1">
                 <div className="flex items-center justify-center gap-2">
-                  <button onClick={() => setBet(Math.max(0.01, bet - 0.1))} className="px-2 py-0.5 rounded bg-red-800 text-red-200 text-xs">-</button>
-                  <span className="text-yellow-400 font-mono text-xs">{bet.toFixed(2)} UC</span>
-                  <button onClick={() => setBet(bet + 0.1)} className="px-2 py-0.5 rounded bg-green-800 text-green-200 text-xs">+</button>
+                  <span className="text-gray-400 text-xs">Bet:</span>
+                  <input
+                    type="text"
+                    value={bet}
+                    onChange={(e) => setBet(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-20 px-2 py-0.5 rounded bg-black/50 border border-yellow-600 text-yellow-400 text-xs text-center font-mono"
+                  />
+                  <span className="text-yellow-400 text-xs">UC</span>
                 </div>
                 <button onClick={startBJ} className="w-full py-1 rounded bg-yellow-600 hover:bg-yellow-500 text-black font-bold text-xs">DEAL</button>
               </div>
@@ -1268,23 +1277,69 @@ const ShopItem = ({ id, type, name, specs, price, owned, onBuy, alwaysBuyable })
 
 // Main Game
 export default function MiningGame() {
-  const [gameState, setGameState] = useState(INITIAL_STATE);
-  const [nodes, setNodes] = useState({
+  // Load saved state from localStorage or use defaults
+  const loadSavedState = () => {
+    try {
+      const saved = localStorage.getItem('unitcoin-save');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed;
+      }
+    } catch (e) {
+      console.log('Failed to load save:', e);
+    }
+    return null;
+  };
+
+  const savedState = loadSavedState();
+  
+  const [gameState, setGameState] = useState(savedState?.gameState || INITIAL_STATE);
+  const [nodes, setNodes] = useState(savedState?.nodes || {
     'power-grid': { type: 'power-grid', position: { x: 30, y: 40 } },
     'pc-1': { type: 'pc', position: { x: 240, y: 30 }, cpu: 'cpu-1', gpu: 'gpu-8', ram: ['ram-8', 'ram-8', null, null], cooling: null, os: 'trader-os', cpuOC: 0, gpuOC: 0, ramOC: 0, isOverheated: false, currentTemp: 25 },
     'interface-1': { type: 'interface', position: { x: 580, y: 40 } },
   });
-  const [connections, setConnections] = useState([]);
+  const [connections, setConnections] = useState(savedState?.connections || []);
   const [drawingConnection, setDrawingConnection] = useState(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-  const [inventory, setInventory] = useState({ 'cpu-1': true, 'gpu-8': true, 'ram-8': true, 'trader-os': true });
+  const [inventory, setInventory] = useState(savedState?.inventory || { 'cpu-1': true, 'gpu-8': true, 'ram-8': true, 'trader-os': true });
   const [shopOpen, setShopOpen] = useState(true);
-  const [nodeCounter, setNodeCounter] = useState(2);
+  const [nodeCounter, setNodeCounter] = useState(savedState?.nodeCounter || 2);
   const [cheatTerminalOpen, setCheatTerminalOpen] = useState(false);
   const [cheatInput, setCheatInput] = useState('');
   
   const workspaceRef = useRef(null);
   const scale = CANVAS_SCALES[gameState.canvasLevel];
+
+  // Auto-save to localStorage whenever state changes
+  useEffect(() => {
+    const saveData = {
+      gameState,
+      nodes,
+      connections,
+      inventory,
+      nodeCounter,
+      savedAt: Date.now()
+    };
+    try {
+      localStorage.setItem('unitcoin-save', JSON.stringify(saveData));
+    } catch (e) {
+      console.log('Failed to save:', e);
+    }
+  }, [gameState, nodes, connections, inventory, nodeCounter]);
+
+  const [resetConfirm, setResetConfirm] = useState(false);
+
+  // Reset game function
+  const resetGame = () => {
+    if (resetConfirm) {
+      localStorage.removeItem('unitcoin-save');
+      window.location.reload();
+    } else {
+      setResetConfirm(true);
+      setTimeout(() => setResetConfirm(false), 3000); // Reset after 3 seconds if not clicked
+    }
+  };
 
   // Handle cheat code
   const handleCheatSubmit = () => {
@@ -1700,6 +1755,13 @@ export default function MiningGame() {
               <span className="text-yellow-400 text-sm">🪙</span>
               <span className="text-yellow-400 font-mono text-sm">{gameState.unitCoin.toFixed(6)}</span>
             </div>
+            <button 
+              onClick={resetGame}
+              className={`px-2 py-0.5 rounded text-xs border ${resetConfirm ? 'bg-red-700 text-white border-red-500 animate-pulse' : 'bg-red-900/50 text-red-400 border-red-800 hover:bg-red-800/50'}`}
+              title="Reset all progress"
+            >
+              {resetConfirm ? '⚠️ ARE YOU SURE?' : '🔄 Reset'}
+            </button>
           </div>
         </div>
 
