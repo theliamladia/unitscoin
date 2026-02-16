@@ -4,8 +4,8 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 const INITIAL_STATE = {
   money: 50,
   unitCoin: 0,
-  unitCoinPrice: 1.00,
-  priceHistory: [1.00],
+  unitCoinPrice: 2.00,
+  priceHistory: [2.00],
   canvasLevel: 1, // 1 = 100%, 2 = 75%, 3 = 50%
 };
 
@@ -67,12 +67,18 @@ const COMPONENTS = {
 
 // Transformer definitions
 const TRANSFORMERS = {
-  'transformer-small': { name: 'gUnit 500W Battery', wattage: 500, tickFee: 0.01, price: 200 },
-  'transformer-medium': { name: 'gUnit 1000W Battery', wattage: 1000, tickFee: 0.03, price: 500 },
-  'transformer-large': { name: 'gUnit Pro Zenith 2500W', wattage: 2500, tickFee: 0.08, price: 1200 },
+  'transformer-small': { name: 'gUnit 500W Battery', wattage: 500, tickFee: 0.003, price: 50 },
+  'transformer-medium': { name: 'gUnit 1000W Battery', wattage: 1000, tickFee: 0.009, price: 500 },
+  'transformer-large': { name: 'gUnit Pro Zenith 2500W', wattage: 2500, tickFee: 0.024, price: 1200 },
 };
 
 const OVERHEAT_THRESHOLD = 95;
+const MINER_BASE_UGS = 1.8;
+const MINER_POWER_DRAW = 120;
+const STARTER_GFI_DEVICE_WATTAGE = 220;
+const PRICE_TARGET = 2.0;
+const PRICE_FLOOR = 1.2;
+const PRICE_CEILING = 5.0;
 
 // Calculate UGS
 const calculateUGS = (cpu, gpu, ramSlots, cpuOC = 0, gpuOC = 0, ramOC = 0) => {
@@ -97,7 +103,7 @@ const calculateUGS = (cpu, gpu, ramSlots, cpuOC = 0, gpuOC = 0, ramOC = 0) => {
   const gpuMultiplier = 1 + gpuOC / 100;
   const ramOCMultiplier = 1 + ramOC / 200; // RAM OC has less impact
   
-  const baseUGS = (gpuData.hashRate * gpuMultiplier * cpuData.cores * cpuData.speed * cpuMultiplier * ramFactor * ramOCMultiplier * ddr5Multiplier) / 100;
+  const baseUGS = (gpuData.hashRate * gpuMultiplier * cpuData.cores * cpuData.speed * cpuMultiplier * ramFactor * ramOCMultiplier * ddr5Multiplier) / 12;
   return baseUGS;
 };
 
@@ -448,7 +454,7 @@ const MinerNode = ({ id, powerConnected, displayConnected, onStartConnection, on
       <div className="mt-2 p-1.5 rounded bg-purple-900/30 border border-purple-800/50">
         <div className="flex justify-between items-center">
           <span className="text-purple-400 text-xs">UGS</span>
-          <span className="text-purple-300 font-mono text-xs font-bold">0.0167/s</span>
+          <span className="text-purple-300 font-mono text-xs font-bold">{(MINER_BASE_UGS / 60).toFixed(4)}/s</span>
         </div>
       </div>
     )}
@@ -1512,21 +1518,72 @@ export default function MiningGame() {
     return map;
   }, [connections]);
 
-  // Power check
-  const hasPower = useCallback((nodeId, visited = new Set()) => {
-    if (visited.has(nodeId)) return false;
+  // Resolve upstream power source.
+  // Rules:
+  // 1) GFI can power transformers and starter devices.
+  // 2) High-draw devices need transformer capacity.
+  const getPowerSource = useCallback((nodeId, visited = new Set()) => {
+    if (visited.has(nodeId)) return null;
     visited.add(nodeId);
 
     const conn = inboundPowerByNode.get(nodeId);
-    if (!conn) return false;
+    if (!conn) return null;
     const [fromNode] = conn.from.split(':');
-    if (fromNode === 'power-grid') return true;
+    if (fromNode === 'power-grid') return { type: 'grid', id: 'power-grid' };
+
     const fromNodeData = nodes[fromNode];
-    if (fromNodeData?.type === 'power-strip' || fromNodeData?.type === 'transformer') {
-      return hasPower(fromNode, visited);
+    if (!fromNodeData) return null;
+
+    if (fromNodeData.type === 'transformer') {
+      const transformerInput = inboundPowerByNode.get(fromNode);
+      if (!transformerInput) return null;
+      const [transformerSource] = transformerInput.from.split(':');
+      if (transformerSource !== 'power-grid') return null;
+      return { type: 'transformer', id: fromNode };
     }
-    return false;
+
+    if (fromNodeData.type === 'power-strip') {
+      return getPowerSource(fromNode, visited);
+    }
+
+    return null;
   }, [inboundPowerByNode, nodes]);
+
+  // Power check
+  const hasPower = useCallback((nodeId) => {
+    const node = nodes[nodeId];
+    if (!node) return false;
+
+    // Transformers must be directly connected to GFI.
+    if (node.type === 'transformer') {
+      const conn = inboundPowerByNode.get(nodeId);
+      if (!conn) return false;
+      const [fromNode] = conn.from.split(':');
+      return fromNode === 'power-grid';
+    }
+
+    const source = getPowerSource(nodeId);
+    if (!source) return false;
+
+    // Per-device capacity gate:
+    // - direct GFI supports starter-level draws only
+    // - transformer supports up to battery wattage
+    if (node.type === 'pc') {
+      const draw = calculatePowerDraw(node.cpu, node.gpu, node.ram, node.cooling, node.cpuOC || 0, node.gpuOC || 0, node.ramOC || 0);
+      if (source.type === 'grid') return draw <= STARTER_GFI_DEVICE_WATTAGE;
+      const transformerNode = nodes[source.id];
+      const transformerData = transformerNode ? TRANSFORMERS[transformerNode.transformerType] : null;
+      return !!transformerData && draw <= transformerData.wattage;
+    }
+    if (node.type === 'miner') {
+      if (source.type === 'grid') return MINER_POWER_DRAW <= STARTER_GFI_DEVICE_WATTAGE;
+      const transformerNode = nodes[source.id];
+      const transformerData = transformerNode ? TRANSFORMERS[transformerNode.transformerType] : null;
+      return !!transformerData && MINER_POWER_DRAW <= transformerData.wattage;
+    }
+
+    return source.type === 'grid' || source.type === 'transformer';
+  }, [getPowerSource, inboundPowerByNode, nodes]);
 
   const hasDisplay = useCallback((nodeId) => connections.some(c => c.from === `${nodeId}:display-out`), [connections]);
 
@@ -1638,8 +1695,9 @@ export default function MiningGame() {
   useEffect(() => {
     const interval = setInterval(() => {
       setGameState(prev => {
-        const change = (Math.random() - 0.5) * 0.2;
-        const newPrice = Math.max(0.1, prev.unitCoinPrice + change);
+        const drift = (PRICE_TARGET - prev.unitCoinPrice) * 0.08;
+        const noise = (Math.random() - 0.5) * 0.08;
+        const newPrice = Math.min(PRICE_CEILING, Math.max(PRICE_FLOOR, prev.unitCoinPrice + drift + noise));
         return { ...prev, unitCoinPrice: newPrice, priceHistory: [...prev.priceHistory.slice(-20), newPrice] };
       });
     }, 2000);
@@ -1682,7 +1740,7 @@ export default function MiningGame() {
 
             updated[id] = { ...node, currentTemp: Math.round(newTemp), isOverheated, cpuOC, gpuOC, ramOC };
           } else if (node.type === 'miner' && hasPower(id)) {
-            totalUGS += 1;
+            totalUGS += MINER_BASE_UGS;
           } else if (node.type === 'transformer' && hasPower(id)) {
             transformerFees += TRANSFORMERS[node.transformerType].tickFee;
           }
@@ -1762,7 +1820,6 @@ export default function MiningGame() {
     if (fromConn === 'power-out' && connectorId === 'power-in') {
       if (fromType === 'power-grid' && ['pc', 'power-strip', 'miner', 'transformer'].includes(toType)) valid = true;
       if (fromType === 'transformer' && ['pc', 'power-strip', 'miner'].includes(toType)) valid = true;
-      if (fromType === 'power-strip' && ['pc', 'miner'].includes(toType)) valid = true;
     }
     if (fromConn.startsWith('power-out-') && connectorId === 'power-in') {
       if (fromType === 'power-strip' && ['pc', 'miner'].includes(toType)) valid = true;
@@ -1985,7 +2042,7 @@ export default function MiningGame() {
   // Calculate totals
   const totalUGS = Object.entries(nodes).reduce((sum, [id, node]) => {
     if (node.type === 'pc' && hasPower(id) && !node.isOverheated) return sum + calculateUGS(node.cpu, node.gpu, node.ram, node.cpuOC || 0, node.gpuOC || 0, node.ramOC || 0);
-    if (node.type === 'miner' && hasPower(id)) return sum + 1;
+    if (node.type === 'miner' && hasPower(id)) return sum + MINER_BASE_UGS;
     return sum;
   }, 0);
 
@@ -2155,9 +2212,9 @@ export default function MiningGame() {
                   <div>
                     <div className="text-orange-500 mb-1 text-xs">🔋 Batteries</div>
                     <div className="space-y-1">
-                      <ShopItem id="transformer-small" type="transformer" name="gUnit 500W" specs="$0.01/s" price={200} owned={false} onBuy={handleShopBuy} alwaysBuyable />
-                      <ShopItem id="transformer-medium" type="transformer" name="gUnit 1000W" specs="$0.03/s" price={500} owned={false} onBuy={handleShopBuy} alwaysBuyable />
-                      <ShopItem id="transformer-large" type="transformer" name="gUnit Pro Zenith" specs="2500W $0.08/s" price={1200} owned={false} onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="transformer-small" type="transformer" name="gUnit 500W" specs="$0.003/s" price={50} owned={false} onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="transformer-medium" type="transformer" name="gUnit 1000W" specs="$0.009/s" price={500} owned={false} onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="transformer-large" type="transformer" name="gUnit Pro Zenith" specs="2500W $0.024/s" price={1200} owned={false} onBuy={handleShopBuy} alwaysBuyable />
                     </div>
                   </div>
 
@@ -2166,7 +2223,7 @@ export default function MiningGame() {
                     <div className="text-purple-500 mb-1 text-xs">📦 Nodes</div>
                     <div className="space-y-1">
                       <ShopItem id="power-strip" type="node" name="Power Strip" specs="4-way" price={25} owned={false} onBuy={handleShopBuy} alwaysBuyable />
-                      <ShopItem id="miner" type="node" name="aSIC B1 Miner" specs="0.0167/s" price={100} owned={false} onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="miner" type="node" name="aSIC B1 Miner" specs={`${(MINER_BASE_UGS / 60).toFixed(4)}/s`} price={100} owned={false} onBuy={handleShopBuy} alwaysBuyable />
                       <ShopItem id="interface-hub" type="node" name="Interface Hub" specs="4 inputs" price={40} owned={false} onBuy={handleShopBuy} alwaysBuyable />
                       <ShopItem id="program-rack" type="node" name="Program Rack" specs="3 slots" price={75} owned={false} onBuy={handleShopBuy} alwaysBuyable />
                     </div>
