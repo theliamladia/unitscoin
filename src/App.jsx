@@ -76,7 +76,7 @@ const TRANSFORMERS = {
 };
 
 const OVERHEAT_THRESHOLD = 95;
-const MINER_BASE_UGS = 1.8;
+const MINER_BASE_UGS = 2.2;
 const MINER_POWER_DRAW = 120;
 const STARTER_GFI_DEVICE_WATTAGE = 220;
 const PRICE_TARGET = 2.0;
@@ -107,7 +107,7 @@ const calculateUGS = (cpu, gpu, ramSlots, cpuOC = 0, gpuOC = 0, ramOC = 0) => {
   const gpuMultiplier = 1 + gpuOC / 100;
   const ramOCMultiplier = 1 + ramOC / 200; // RAM OC has less impact
   
-  const baseUGS = (gpuData.hashRate * gpuMultiplier * cpuData.cores * cpuData.speed * cpuMultiplier * ramFactor * ramOCMultiplier * ddr5Multiplier) / 12;
+  const baseUGS = (gpuData.hashRate * gpuMultiplier * cpuData.cores * cpuData.speed * cpuMultiplier * ramFactor * ramOCMultiplier * ddr5Multiplier) / 10;
   return baseUGS;
 };
 
