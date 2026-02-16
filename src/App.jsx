@@ -82,6 +82,7 @@ const STARTER_GFI_DEVICE_WATTAGE = 220;
 const PRICE_TARGET = 2.0;
 const PRICE_FLOOR = 1.2;
 const PRICE_CEILING = 5.0;
+const TICK_MS = 200;
 
 // Calculate UGS
 const calculateUGS = (cpu, gpu, ramSlots, cpuOC = 0, gpuOC = 0, ramOC = 0) => {
@@ -425,7 +426,7 @@ const PCNode = ({ id, cpu, gpu, ram, cooling, os, powerConnected, displayConnect
         <div className="mt-2 p-1.5 rounded bg-green-900/30 border border-green-800/50">
           <div className="flex justify-between items-center">
             <span className="text-green-500 text-xs">⛏️</span>
-            <span className="text-green-400 font-mono text-xs font-bold">{(ugs / 60).toFixed(6)}/s</span>
+            <span className="text-green-400 font-mono text-xs font-bold">{(ugs / 60).toFixed(3)}/s</span>
           </div>
         </div>
       )}
@@ -457,7 +458,7 @@ const MinerNode = ({ id, powerConnected, displayConnected, onStartConnection, on
       <div className="mt-2 p-1.5 rounded bg-purple-900/30 border border-purple-800/50">
         <div className="flex justify-between items-center">
           <span className="text-purple-400 text-xs">UGS</span>
-          <span className="text-purple-300 font-mono text-xs font-bold">{(MINER_BASE_UGS / 60).toFixed(4)}/s</span>
+          <span className="text-purple-300 font-mono text-xs font-bold">{(MINER_BASE_UGS / 60).toFixed(3)}/s</span>
         </div>
       </div>
     )}
@@ -891,7 +892,7 @@ const UhromeBrowser = ({ id, pcConnected, miningProgress, onBetUnitCoin, onSpend
                 <button onClick={newBJ} className="w-full py-1 rounded bg-purple-600 text-white font-bold text-xs">AGAIN</button>
               </div>
             )}
-            <div className="mt-1 text-center text-gray-500 text-xs">Balance: <span className="text-yellow-400">{(miningProgress || 0).toFixed(2)}</span> UC</div>
+            <div className="mt-1 text-center text-gray-500 text-xs">Balance: <span className="text-yellow-400">{(miningProgress || 0).toFixed(3)}</span> UC</div>
           </div>
         ) : (
           /* SkinMonkey Case Opening */
@@ -1190,7 +1191,7 @@ const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCo
             <div className="mt-2 pt-2 border-t border-gray-800 text-xs">
               <div className="flex justify-between text-gray-400">
                 <span>UGS:</span>
-                <span className="text-green-400">{(calculateUGS(pcData.cpu, pcData.gpu, pcData.ram, pcData.cpuOC || 0, pcData.gpuOC || 0, pcData.ramOC || 0) / 60).toFixed(6)}/s</span>
+                <span className="text-green-400">{(calculateUGS(pcData.cpu, pcData.gpu, pcData.ram, pcData.cpuOC || 0, pcData.gpuOC || 0, pcData.ramOC || 0) / 60).toFixed(3)}/s</span>
               </div>
             </div>
           )}
@@ -1302,11 +1303,17 @@ const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCo
 };
 
 // Interface Node
-function InterfaceNode({ id, connected, pcData, hasMinerConnected, programData, unitCoin, unitCoinPrice, onBuy, onSell, onSellAll, money, priceHistory, onStartConnection, onEndConnection, onDisconnect }) {
+function InterfaceNode({ id, connected, pcData, hasMinerConnected, sourceInfo, onSwitchSource, programData, unitCoin, unitCoinPrice, onBuy, onSell, onSellAll, money, priceHistory, onStartConnection, onEndConnection, onDisconnect }) {
   const [buyAmount, setBuyAmount] = useState('1');
   const [sellAmount, setSellAmount] = useState('1');
   const os = pcData ? pcData.os : null;
   const osData = os ? COMPONENTS.os[os] : null;
+  const sourceCount = sourceInfo?.sources?.length || 0;
+  const currentSourceLabel = sourceInfo?.source?.type === 'pc'
+    ? `PC ${sourceInfo.selectedIndex + 1}`
+    : sourceInfo?.source?.type === 'miner'
+      ? `Miner ${sourceInfo.selectedIndex + 1}`
+      : null;
   
   const canTrade = (connected && os) || (connected && hasMinerConnected);
   const displayName = os ? osData.name : (hasMinerConnected ? 'Miner Direct Link' : null);
@@ -1344,88 +1351,103 @@ function InterfaceNode({ id, connected, pcData, hasMinerConnected, programData, 
       <div className="p-2 rounded-lg" style={{ background: canTrade ? '#0a1628' : '#0a0a0a', border: '1px solid #1e3a5f', minHeight: '120px' }}>
         {!connected ? (
           <div className="flex items-center justify-center h-24 text-gray-600 text-xs">No Signal</div>
-        ) : !canTrade ? (
-          <div className="flex items-center justify-center h-24 text-gray-600 text-xs">No OS on PC</div>
         ) : (
           <div className="space-y-1.5">
-            <div className="text-center text-green-400 text-xs font-mono">═ {displayName} ═</div>
-            <div className="bg-black/50 p-1.5 rounded">
-              <div className="flex items-center justify-between">
-                <span className="text-gray-500 text-xs">UC</span>
-                <div className="flex items-center gap-1">
-                  <span className="text-sm font-mono text-yellow-400">${unitCoinPrice.toFixed(2)}</span>
-                  <span className={`text-xs ${isUp ? 'text-green-400' : 'text-red-400'}`}>
-                    {isUp ? '▲' : '▼'}
-                  </span>
+            {sourceCount > 1 && (
+              <div className="flex items-center justify-between gap-1 p-1 rounded bg-black/35 border border-blue-900/40">
+                <button onClick={() => onSwitchSource(id, -1)} className="px-1.5 py-0.5 rounded text-xs bg-blue-900/50 text-blue-300 hover:bg-blue-700/50">◀</button>
+                <div className="text-[10px] text-blue-300 font-mono text-center">
+                  Source {sourceInfo.selectedIndex + 1}/{sourceCount} {currentSourceLabel ? `• ${currentSourceLabel}` : ''}
                 </div>
+                <button onClick={() => onSwitchSource(id, 1)} className="px-1.5 py-0.5 rounded text-xs bg-blue-900/50 text-blue-300 hover:bg-blue-700/50">▶</button>
               </div>
-            </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-500">Hold:</span>
-              <span className="text-cyan-400 font-mono">{unitCoin.toFixed(6)}</span>
-            </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-500">Cash:</span>
-              <span className="text-green-400 font-mono">${money.toFixed(2)}</span>
-            </div>
-            
-            <div className="flex gap-1 items-center">
-              <button 
-                onClick={handleBuy} 
-                disabled={money < (parseFloat(buyAmount) || 0) * unitCoinPrice}
-                className="py-1 px-2 rounded text-xs font-bold" 
-                style={{ 
-                  background: money >= (parseFloat(buyAmount) || 0) * unitCoinPrice ? '#166534' : '#1f2937', 
-                  color: money >= (parseFloat(buyAmount) || 0) * unitCoinPrice ? '#4ade80' : '#6b7280', 
-                  cursor: money >= (parseFloat(buyAmount) || 0) * unitCoinPrice ? 'pointer' : 'not-allowed' 
-                }}
-              >
-                BUY
-              </button>
-              <input
-                type="text"
-                value={buyAmount}
-                onChange={(e) => setBuyAmount(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                className="flex-1 px-1 py-0.5 rounded bg-black/50 border border-green-800 text-green-400 text-xs text-center font-mono"
-                style={{ width: '50px' }}
-              />
-            </div>
-            
-            <div className="flex gap-1 items-center">
-              <button 
-                onClick={handleSell} 
-                disabled={unitCoin < (parseFloat(sellAmount) || 0)}
-                className="py-1 px-2 rounded text-xs font-bold" 
-                style={{ 
-                  background: unitCoin >= (parseFloat(sellAmount) || 0) ? '#991b1b' : '#1f2937', 
-                  color: unitCoin >= (parseFloat(sellAmount) || 0) ? '#f87171' : '#6b7280', 
-                  cursor: unitCoin >= (parseFloat(sellAmount) || 0) ? 'pointer' : 'not-allowed' 
-                }}
-              >
-                SELL
-              </button>
-              <input
-                type="text"
-                value={sellAmount}
-                onChange={(e) => setSellAmount(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                className="flex-1 px-1 py-0.5 rounded bg-black/50 border border-red-800 text-red-400 text-xs text-center font-mono"
-                style={{ width: '50px' }}
-              />
-              <button 
-                onClick={onSellAll} 
-                disabled={unitCoin < 0.01}
-                className="py-1 px-1.5 rounded text-xs font-bold" 
-                style={{ 
-                  background: unitCoin >= 0.01 ? '#7c2d12' : '#1f2937', 
-                  color: unitCoin >= 0.01 ? '#fdba74' : '#6b7280', 
-                  cursor: unitCoin >= 0.01 ? 'pointer' : 'not-allowed' 
-                }}
-              >
-                ALL
-              </button>
-            </div>
+            )}
+            {!canTrade ? (
+              <div className="flex items-center justify-center h-24 text-gray-600 text-xs">
+                {sourceInfo?.source?.type === 'pc' ? 'No OS on selected PC' : 'No Trade Source'}
+              </div>
+            ) : (
+              <>
+                <div className="text-center text-green-400 text-xs font-mono">═ {displayName} ═</div>
+                <div className="bg-black/50 p-1.5 rounded">
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-500 text-xs">UC</span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-sm font-mono text-yellow-400">${unitCoinPrice.toFixed(2)}</span>
+                      <span className={`text-xs ${isUp ? 'text-green-400' : 'text-red-400'}`}>
+                        {isUp ? '▲' : '▼'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-500">Hold:</span>
+                  <span className="text-cyan-400 font-mono">{unitCoin.toFixed(3)}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-500">Cash:</span>
+                  <span className="text-green-400 font-mono">${money.toFixed(2)}</span>
+                </div>
+
+                <div className="flex gap-1 items-center">
+                  <button 
+                    onClick={handleBuy} 
+                    disabled={money < (parseFloat(buyAmount) || 0) * unitCoinPrice}
+                    className="py-1 px-2 rounded text-xs font-bold" 
+                    style={{ 
+                      background: money >= (parseFloat(buyAmount) || 0) * unitCoinPrice ? '#166534' : '#1f2937', 
+                      color: money >= (parseFloat(buyAmount) || 0) * unitCoinPrice ? '#4ade80' : '#6b7280', 
+                      cursor: money >= (parseFloat(buyAmount) || 0) * unitCoinPrice ? 'pointer' : 'not-allowed' 
+                    }}
+                  >
+                    BUY
+                  </button>
+                  <input
+                    type="text"
+                    value={buyAmount}
+                    onChange={(e) => setBuyAmount(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex-1 px-1 py-0.5 rounded bg-black/50 border border-green-800 text-green-400 text-xs text-center font-mono"
+                    style={{ width: '50px' }}
+                  />
+                </div>
+
+                <div className="flex gap-1 items-center">
+                  <button 
+                    onClick={handleSell} 
+                    disabled={unitCoin < (parseFloat(sellAmount) || 0)}
+                    className="py-1 px-2 rounded text-xs font-bold" 
+                    style={{ 
+                      background: unitCoin >= (parseFloat(sellAmount) || 0) ? '#991b1b' : '#1f2937', 
+                      color: unitCoin >= (parseFloat(sellAmount) || 0) ? '#f87171' : '#6b7280', 
+                      cursor: unitCoin >= (parseFloat(sellAmount) || 0) ? 'pointer' : 'not-allowed' 
+                    }}
+                  >
+                    SELL
+                  </button>
+                  <input
+                    type="text"
+                    value={sellAmount}
+                    onChange={(e) => setSellAmount(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex-1 px-1 py-0.5 rounded bg-black/50 border border-red-800 text-red-400 text-xs text-center font-mono"
+                    style={{ width: '50px' }}
+                  />
+                  <button 
+                    onClick={onSellAll} 
+                    disabled={unitCoin < 0.01}
+                    className="py-1 px-1.5 rounded text-xs font-bold" 
+                    style={{ 
+                      background: unitCoin >= 0.01 ? '#7c2d12' : '#1f2937', 
+                      color: unitCoin >= 0.01 ? '#fdba74' : '#6b7280', 
+                      cursor: unitCoin >= 0.01 ? 'pointer' : 'not-allowed' 
+                    }}
+                  >
+                    ALL
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -1697,68 +1719,79 @@ export default function MiningGame() {
     return null;
   }, [connections, nodes]);
 
-  // Get PC data for interface (handles direct connection or through interface hub)
+  // Get display sources for interface (direct or via hub)
+  const getDisplaySourcesForInterface = useCallback((interfaceId) => {
+    const displayConn = connections.find(c => c.to === `${interfaceId}:display-in`);
+    if (!displayConn) return [];
+    
+    const [sourceId] = displayConn.from.split(':');
+    const sourceNode = nodes[sourceId];
+    if (!sourceNode) return [];
+    
+    // Direct source
+    if (sourceNode.type === 'pc' || sourceNode.type === 'miner') {
+      return [{ id: sourceId, type: sourceNode.type, node: sourceNode }];
+    }
+    
+    // Through interface hub
+    if (sourceNode.type === 'interface-hub') {
+      const sources = [];
+      for (let i = 0; i < 4; i++) {
+        const hubConn = connections.find(c => c.to === `${sourceId}:display-in-${i}`);
+        if (hubConn) {
+          const [deviceId] = hubConn.from.split(':');
+          const deviceNode = nodes[deviceId];
+          if (deviceNode?.type === 'pc' || deviceNode?.type === 'miner') {
+            sources.push({ id: deviceId, type: deviceNode.type, node: deviceNode });
+          }
+        }
+      }
+      return sources;
+    }
+    
+    // Unknown source
+    return [];
+  }, [connections, nodes]);
+
+  const getSelectedDisplaySource = useCallback((interfaceId) => {
+    const sources = getDisplaySourcesForInterface(interfaceId);
+    if (sources.length === 0) return null;
+    const selectedIndexRaw = nodes[interfaceId]?.selectedSourceIndex || 0;
+    const selectedIndex = Math.max(0, Math.min(sources.length - 1, selectedIndexRaw));
+    return { source: sources[selectedIndex], selectedIndex, sources };
+  }, [getDisplaySourcesForInterface, nodes]);
+
+  const handleSwitchInterfaceSource = useCallback((interfaceId, direction) => {
+    const sourceCount = getDisplaySourcesForInterface(interfaceId).length;
+    if (sourceCount <= 1) return;
+    setNodes(prev => {
+      const node = prev[interfaceId];
+      if (!node || node.type !== 'interface') return prev;
+      const current = node.selectedSourceIndex || 0;
+      const next = (current + direction + sourceCount) % sourceCount;
+      return { ...prev, [interfaceId]: { ...node, selectedSourceIndex: next } };
+    });
+  }, [getDisplaySourcesForInterface]);
+
+  // Get PC data for interface based on selected source
   const getPCDataForInterface = useCallback((interfaceId) => {
-    const displayConn = connections.find(c => c.to === `${interfaceId}:display-in`);
-    if (!displayConn) return null;
-    
-    const [sourceId] = displayConn.from.split(':');
-    const sourceNode = nodes[sourceId];
-    
-    // Direct PC connection
-    if (sourceNode?.type === 'pc') {
-      return { ...sourceNode, id: sourceId };
-    }
-    
-    // If connected through Interface Hub, find the first connected PC
-    if (sourceNode?.type === 'interface-hub') {
-      for (let i = 0; i < 4; i++) {
-        const hubConn = connections.find(c => c.to === `${sourceId}:display-in-${i}`);
-        if (hubConn) {
-          const [deviceId] = hubConn.from.split(':');
-          const deviceNode = nodes[deviceId];
-          if (deviceNode?.type === 'pc') {
-            return { ...deviceNode, id: deviceId };
-          }
-        }
-      }
-    }
-    
-    // Miner or other - return null (no OS needed for display)
-    return null;
-  }, [connections, nodes]);
+    const selected = getSelectedDisplaySource(interfaceId);
+    if (!selected || selected.source.type !== 'pc') return null;
+    return { ...selected.source.node, id: selected.source.id };
+  }, [getSelectedDisplaySource]);
 
-  // Check if interface has any miner connected (directly or through hub)
+  // Check if selected source is a miner
   const hasMinerConnected = useCallback((interfaceId) => {
-    const displayConn = connections.find(c => c.to === `${interfaceId}:display-in`);
-    if (!displayConn) return false;
-    
-    const [sourceId] = displayConn.from.split(':');
-    const sourceNode = nodes[sourceId];
-    
-    // Direct miner connection
-    if (sourceNode?.type === 'miner') {
-      return true;
-    }
-    
-    // If connected through Interface Hub, check for any miners
-    if (sourceNode?.type === 'interface-hub') {
-      for (let i = 0; i < 4; i++) {
-        const hubConn = connections.find(c => c.to === `${sourceId}:display-in-${i}`);
-        if (hubConn) {
-          const [deviceId] = hubConn.from.split(':');
-          const deviceNode = nodes[deviceId];
-          if (deviceNode?.type === 'miner') {
-            return true;
-          }
-        }
-      }
-    }
-    
-    return false;
-  }, [connections, nodes]);
+    const selected = getSelectedDisplaySource(interfaceId);
+    if (!selected) return false;
+    return selected.source.type === 'miner';
+  }, [getSelectedDisplaySource]);
 
-  // Get program data for interface (finds programs connected to PC that's connected to this interface)
+  const getSourceInfoForInterface = useCallback((interfaceId) => {
+    return getSelectedDisplaySource(interfaceId);
+  }, [getSelectedDisplaySource]);
+
+  // Get program data for interface (finds programs connected to selected PC source)
   const getProgramDataForInterface = useCallback((interfaceId) => {
     const interfacePc = getPCDataForInterface(interfaceId);
     if (!interfacePc) return null;
@@ -1806,6 +1839,7 @@ export default function MiningGame() {
 
   // Temperature and mining tick
   useEffect(() => {
+    const tickSeconds = TICK_MS / 1000;
     const interval = setInterval(() => {
       let totalUGS = 0;
       let transformerFees = 0;
@@ -1852,11 +1886,12 @@ export default function MiningGame() {
       if (totalUGS > 0 || transformerFees > 0) {
         setGameState(prev => ({
           ...prev,
-          unitCoin: prev.unitCoin + (totalUGS / 60),
-          money: Math.max(0, prev.money - transformerFees),
+          // totalUGS is per-minute throughput; convert to this tick's increment.
+          unitCoin: prev.unitCoin + (totalUGS * (TICK_MS / 60000)),
+          money: Math.max(0, prev.money - (transformerFees * tickSeconds)),
         }));
       }
-    }, 1000);
+    }, TICK_MS);
     return () => clearInterval(interval);
   }, [hasPower]);
 
@@ -2175,7 +2210,7 @@ export default function MiningGame() {
             >⛏️</div>
             <div>
               <h1 className="text-base font-bold text-white">UnitCoin Miner</h1>
-              <div className="text-xs text-gray-500">UGS: <span className="text-cyan-400">{(totalUGS / 60).toFixed(6)}/s</span> • Zoom: <span className="text-purple-400">{Math.round(scale * 100)}%</span></div>
+              <div className="text-xs text-gray-500">UGS: <span className="text-cyan-400">{(totalUGS / 60).toFixed(3)}/s</span> • Zoom: <span className="text-purple-400">{Math.round(scale * 100)}%</span></div>
             </div>
           </div>
 
@@ -2186,7 +2221,7 @@ export default function MiningGame() {
             </div>
             <div className="flex items-center gap-1.5">
               <span className="text-yellow-400 text-sm">🪙</span>
-              <span className="text-yellow-400 font-mono text-sm">{gameState.unitCoin.toFixed(6)}</span>
+              <span className="text-yellow-400 font-mono text-sm">{gameState.unitCoin.toFixed(3)}</span>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="text-red-400 text-sm">◈</span>
@@ -2283,7 +2318,7 @@ export default function MiningGame() {
                       <button onClick={() => handleDeleteNode(id)} className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-600 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Delete">✕</button>
                     </div>
                   )}
-                  {node.type === 'interface' && <InterfaceNode id={id} connected={connections.some(c => c.to === `${id}:display-in`)} pcData={getPCDataForInterface(id)} hasMinerConnected={hasMinerConnected(id)} programData={getProgramDataForInterface(id)} unitCoin={gameState.unitCoin} unitCoinPrice={gameState.unitCoinPrice} money={gameState.money} priceHistory={gameState.priceHistory} onBuy={handleBuy} onSell={handleSell} onSellAll={handleSellAll} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />}
+                  {node.type === 'interface' && <InterfaceNode id={id} connected={connections.some(c => c.to === `${id}:display-in`)} pcData={getPCDataForInterface(id)} hasMinerConnected={hasMinerConnected(id)} sourceInfo={getSourceInfoForInterface(id)} onSwitchSource={handleSwitchInterfaceSource} programData={getProgramDataForInterface(id)} unitCoin={gameState.unitCoin} unitCoinPrice={gameState.unitCoinPrice} money={gameState.money} priceHistory={gameState.priceHistory} onBuy={handleBuy} onSell={handleSell} onSellAll={handleSellAll} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />}
                   {node.type === 'program' && (
                     <div className="relative group">
                       <ProgramNode id={id} type={node.programType} pcConnected={connections.some(c => c.to === `${id}:program-in`)} pcData={getPCForProgram(id)} miningProgress={gameState.unitCoin} money={gameState.money} qCoin={gameState.qCoin} onSetOverclock={handleSetOverclock} onBetUnitCoin={(amount) => setGameState(prev => ({ ...prev, unitCoin: prev.unitCoin + amount }))} onSpendMoney={(amount) => setGameState(prev => ({ ...prev, money: prev.money - amount }))} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />
@@ -2341,7 +2376,7 @@ export default function MiningGame() {
                     <div className="text-purple-500 mb-1 text-xs">📦 Nodes</div>
                     <div className="space-y-1">
                       <ShopItem id="power-strip" type="node" name="Power Strip" specs="4-way" price={25} owned={false} onBuy={handleShopBuy} alwaysBuyable />
-                      <ShopItem id="miner" type="node" name="aSIC B1 Miner" specs={`${(MINER_BASE_UGS / 60).toFixed(4)}/s`} price={100} owned={false} onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="miner" type="node" name="aSIC B1 Miner" specs={`${(MINER_BASE_UGS / 60).toFixed(3)}/s`} price={100} owned={false} onBuy={handleShopBuy} alwaysBuyable />
                       <ShopItem id="interface-hub" type="node" name="Interface Hub" specs="4 inputs" price={40} owned={false} onBuy={handleShopBuy} alwaysBuyable />
                       <ShopItem id="program-rack" type="node" name="Program Rack" specs="3 slots" price={75} owned={false} onBuy={handleShopBuy} alwaysBuyable />
                     </div>
