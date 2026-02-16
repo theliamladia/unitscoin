@@ -623,28 +623,65 @@ const UhromeBrowser = ({ id, pcConnected, miningProgress, onBetUnitCoin, onSpend
   const [unboxedItem, setUnboxedItem] = useState(null);
   const [inventory, setInventory] = useState([]);
   const [showInventory, setShowInventory] = useState(false);
+  const [selectedCase, setSelectedCase] = useState('medium');
 
-  // CS:GO-like case items with real odds
-  // Blue (Mil-Spec): 79.92%, Purple (Restricted): 15.98%, Pink (Classified): 3.2%, Red (Covert): 0.64%, Gold (Knife/Rare): 0.26%
-  const CASE_ITEMS = [
-    { name: 'Battle-Scarred P250', rarity: 'blue', color: '#4b69ff', value: 0.15, odds: 19.98 },
-    { name: 'Field-Tested Tec-9', rarity: 'blue', color: '#4b69ff', value: 0.20, odds: 19.98 },
-    { name: 'Minimal Wear MP7', rarity: 'blue', color: '#4b69ff', value: 0.35, odds: 19.98 },
-    { name: 'Factory New Nova', rarity: 'blue', color: '#4b69ff', value: 0.50, odds: 19.98 },
-    { name: 'StatTrak Negev', rarity: 'purple', color: '#8847ff', value: 1.50, odds: 5.33 },
-    { name: 'AWP Electric Hive', rarity: 'purple', color: '#8847ff', value: 3.00, odds: 5.33 },
-    { name: 'AK-47 Redline', rarity: 'purple', color: '#8847ff', value: 5.00, odds: 5.32 },
-    { name: 'M4A1-S Hyper Beast', rarity: 'pink', color: '#d32ce6', value: 12.00, odds: 1.60 },
-    { name: 'USP-S Kill Confirmed', rarity: 'pink', color: '#d32ce6', value: 18.00, odds: 1.60 },
-    { name: 'AK-47 Vulcan', rarity: 'red', color: '#eb4b4b', value: 45.00, odds: 0.32 },
-    { name: 'AWP Asiimov', rarity: 'red', color: '#eb4b4b', value: 65.00, odds: 0.32 },
-    { name: '★ Karambit Fade', rarity: 'gold', color: '#ffd700', value: 800.00, odds: 0.065 },
-    { name: '★ M9 Bayonet Doppler', rarity: 'gold', color: '#ffd700', value: 450.00, odds: 0.065 },
-    { name: '★ Butterfly Knife', rarity: 'gold', color: '#ffd700', value: 350.00, odds: 0.065 },
-    { name: '★ Huntsman Knife', rarity: 'gold', color: '#ffd700', value: 150.00, odds: 0.065 },
-  ];
-
-  const CASE_PRICE = 2.50;
+  const CASE_TYPES = {
+    medium: {
+      label: 'Medium',
+      price: 25.00,
+      items: [
+        { name: 'P250 Steel Mesh', rarity: 'blue', color: '#4b69ff', value: 1.2, odds: 52.0 },
+        { name: 'MP7 Ocean Foam', rarity: 'blue', color: '#4b69ff', value: 1.8, odds: 20.0 },
+        { name: 'Tec-9 Reactor', rarity: 'purple', color: '#8847ff', value: 6.5, odds: 12.0 },
+        { name: 'AK-47 Redline', rarity: 'purple', color: '#8847ff', value: 12.0, odds: 8.0 },
+        { name: 'M4A4 Desolate Space', rarity: 'pink', color: '#d32ce6', value: 35.0, odds: 5.0 },
+        { name: 'AWP Neo-Noir', rarity: 'pink', color: '#d32ce6', value: 55.0, odds: 2.2 },
+        { name: 'AK-47 Vulcan', rarity: 'red', color: '#eb4b4b', value: 140.0, odds: 0.6 },
+        { name: '★ Huntsman Knife', rarity: 'gold', color: '#ffd700', value: 700.0, odds: 0.2 },
+      ],
+    },
+    high: {
+      label: 'High',
+      price: 100.00,
+      items: [
+        { name: 'M4A1-S Decimator', rarity: 'blue', color: '#4b69ff', value: 4.0, odds: 45.0 },
+        { name: 'USP-S Orion', rarity: 'purple', color: '#8847ff', value: 18.0, odds: 22.0 },
+        { name: 'AK-47 Frontside Misty', rarity: 'purple', color: '#8847ff', value: 30.0, odds: 14.0 },
+        { name: 'AWP Hyper Beast', rarity: 'pink', color: '#d32ce6', value: 95.0, odds: 10.0 },
+        { name: 'M4A1-S Printstream', rarity: 'pink', color: '#d32ce6', value: 180.0, odds: 5.5 },
+        { name: 'AK-47 Fire Serpent', rarity: 'red', color: '#eb4b4b', value: 650.0, odds: 2.0 },
+        { name: 'AWP Gungnir', rarity: 'red', color: '#eb4b4b', value: 1300.0, odds: 1.0 },
+        { name: '★ Karambit Doppler', rarity: 'gold', color: '#ffd700', value: 4000.0, odds: 0.5 },
+      ],
+    },
+    'really-high': {
+      label: 'Really High',
+      price: 500.00,
+      items: [
+        { name: 'USP-S Kill Confirmed', rarity: 'purple', color: '#8847ff', value: 90.0, odds: 34.0 },
+        { name: 'AK-47 Fuel Injector', rarity: 'purple', color: '#8847ff', value: 140.0, odds: 24.0 },
+        { name: 'AWP Oni Taiji', rarity: 'pink', color: '#d32ce6', value: 420.0, odds: 17.0 },
+        { name: 'M4A4 Howl (Replica)', rarity: 'pink', color: '#d32ce6', value: 850.0, odds: 11.0 },
+        { name: 'AK-47 Wild Lotus', rarity: 'red', color: '#eb4b4b', value: 2800.0, odds: 8.0 },
+        { name: 'AWP Dragon Lore', rarity: 'red', color: '#eb4b4b', value: 6000.0, odds: 4.0 },
+        { name: '★ M9 Bayonet Sapphire', rarity: 'gold', color: '#ffd700', value: 18000.0, odds: 1.6 },
+        { name: '★ Karambit Ruby', rarity: 'gold', color: '#ffd700', value: 32000.0, odds: 0.4 },
+      ],
+    },
+    'really-really-high': {
+      label: 'Really Really High',
+      price: 2500.00,
+      items: [
+        { name: 'AK-47 Gold Arabesque', rarity: 'pink', color: '#d32ce6', value: 1800.0, odds: 36.0 },
+        { name: 'M4A4 Poseidon', rarity: 'pink', color: '#d32ce6', value: 3200.0, odds: 24.0 },
+        { name: 'AWP Medusa', rarity: 'red', color: '#eb4b4b', value: 9000.0, odds: 18.0 },
+        { name: 'AK-47 Case Hardened #661', rarity: 'red', color: '#eb4b4b', value: 22000.0, odds: 10.0 },
+        { name: '★ Butterfly Knife Emerald', rarity: 'gold', color: '#ffd700', value: 65000.0, odds: 7.0 },
+        { name: '★ Karambit Blue Gem', rarity: 'gold', color: '#ffd700', value: 120000.0, odds: 3.0 },
+        { name: '★ M9 Bayonet Blue Gem', rarity: 'gold', color: '#ffd700', value: 250000.0, odds: 2.0 },
+      ],
+    },
+  };
 
   // Blackjack functions
   const suits = ['♠', '♥', '♦', '♣'];
@@ -715,20 +752,21 @@ const UhromeBrowser = ({ id, pcConnected, miningProgress, onBetUnitCoin, onSpend
 
   // SkinMonkey functions
   const openCase = () => {
-    if (money < CASE_PRICE) return;
-    onSpendMoney(CASE_PRICE);
+    const caseData = CASE_TYPES[selectedCase];
+    if (!caseData || money < caseData.price) return;
+    onSpendMoney(caseData.price);
     setIsUnboxing(true);
     setUnboxedItem(null);
     
     setTimeout(() => {
       const roll = Math.random() * 100;
       let cumulative = 0;
-      let selectedItem = CASE_ITEMS[0];
-      for (const item of CASE_ITEMS) {
+      let selectedItem = caseData.items[0];
+      for (const item of caseData.items) {
         cumulative += item.odds;
         if (roll < cumulative) { selectedItem = item; break; }
       }
-      setUnboxedItem(selectedItem);
+      setUnboxedItem({ ...selectedItem, caseLabel: caseData.label });
       setIsUnboxing(false);
     }, 2000);
   };
@@ -892,16 +930,32 @@ const UhromeBrowser = ({ id, pcConnected, miningProgress, onBetUnitCoin, onSpend
               </div>
             ) : (
               <div className="text-center">
-                <div className="text-6xl mb-2">📦</div>
-                <div className="text-white text-xs mb-1">Weapon Case</div>
-                <div className="text-gray-400 text-xs mb-2">Contains rare weapon skins!</div>
+              <div className="text-6xl mb-2">📦</div>
+                <div className="text-white text-xs mb-1">{CASE_TYPES[selectedCase].label} Crate</div>
+                <div className="text-gray-400 text-xs mb-2">Higher tiers cost more and can drop higher-value skins.</div>
+                <div className="grid grid-cols-2 gap-1 mb-2">
+                  {Object.entries(CASE_TYPES).map(([key, caseData]) => (
+                    <button
+                      key={key}
+                      onClick={() => setSelectedCase(key)}
+                      className="py-1 rounded text-[10px] font-bold"
+                      style={{
+                        background: selectedCase === key ? '#9a3412' : '#374151',
+                        color: selectedCase === key ? '#fed7aa' : '#d1d5db',
+                        border: selectedCase === key ? '1px solid #fb923c' : '1px solid #4b5563',
+                      }}
+                    >
+                      {caseData.label} (${caseData.price.toFixed(0)})
+                    </button>
+                  ))}
+                </div>
                 <button 
                   onClick={openCase} 
-                  disabled={money < CASE_PRICE}
+                  disabled={money < CASE_TYPES[selectedCase].price}
                   className="w-full py-2 rounded font-bold text-xs mb-2"
-                  style={{ background: money >= CASE_PRICE ? '#f97316' : '#374151', color: money >= CASE_PRICE ? 'white' : '#6b7280', cursor: money >= CASE_PRICE ? 'pointer' : 'not-allowed' }}
+                  style={{ background: money >= CASE_TYPES[selectedCase].price ? '#f97316' : '#374151', color: money >= CASE_TYPES[selectedCase].price ? 'white' : '#6b7280', cursor: money >= CASE_TYPES[selectedCase].price ? 'pointer' : 'not-allowed' }}
                 >
-                  OPEN CASE - ${CASE_PRICE.toFixed(2)}
+                  OPEN {CASE_TYPES[selectedCase].label.toUpperCase()} - ${CASE_TYPES[selectedCase].price.toFixed(2)}
                 </button>
                 <button onClick={() => setShowInventory(true)} className="w-full py-1 rounded bg-gray-700 text-gray-300 text-xs">
                   📦 Inventory ({inventory.length})
