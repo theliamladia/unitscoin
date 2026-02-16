@@ -206,6 +206,7 @@ const DraggableNode = ({ id, position, onPositionChange, children, scale = 1 }) 
 
   const handleMouseDown = (e) => {
     if (e.target.closest('.connector') || e.target.closest('.slot') || e.target.closest('button') || e.target.closest('input')) return;
+    e.preventDefault();
     const rect = nodeRef.current.getBoundingClientRect();
     setDragOffset({ x: (e.clientX - rect.left) / scale, y: (e.clientY - rect.top) / scale });
     setIsDragging(true);
@@ -226,7 +227,19 @@ const DraggableNode = ({ id, position, onPositionChange, children, scale = 1 }) 
   }, [isDragging, dragOffset, id, onPositionChange, scale]);
 
   return (
-    <div ref={nodeRef} onMouseDown={handleMouseDown} style={{ position: 'absolute', left: position.x, top: position.y, cursor: isDragging ? 'grabbing' : 'grab', zIndex: isDragging ? 100 : 10 }}>
+    <div
+      ref={nodeRef}
+      onMouseDown={handleMouseDown}
+      style={{
+        position: 'absolute',
+        left: position.x,
+        top: position.y,
+        cursor: isDragging ? 'grabbing' : 'grab',
+        zIndex: isDragging ? 100 : 10,
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+      }}
+    >
       {children}
     </div>
   );
