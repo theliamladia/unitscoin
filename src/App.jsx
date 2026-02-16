@@ -499,6 +499,93 @@ const InterfaceHubNode = ({ id, inputConnections, outputConnected, onStartConnec
   );
 };
 
+// Program Rack Node - stores minimized programs
+const ProgramRackNode = ({ id, slots, onEject, onRemoveFromRack, onStartConnection, onEndConnection, onDisconnect }) => {
+  const [expandedSlot, setExpandedSlot] = useState(null);
+  
+  return (
+    <div style={{ background: 'linear-gradient(135deg, rgba(30,30,50,0.95), rgba(20,20,35,0.98))', border: '2px solid #6366f1', borderRadius: '10px', padding: '12px', minWidth: '220px', boxShadow: '0 0 20px rgba(99,102,241,0.2)' }}>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">🗄️</span>
+          <div>
+            <div className="text-indigo-400 font-bold text-xs">Program Rack</div>
+            <div className="text-xs text-gray-500">{slots.filter(s => s).length}/3 slots used</div>
+          </div>
+        </div>
+      </div>
+      
+      <div className="space-y-1">
+        {[0, 1, 2].map(i => {
+          const program = slots[i];
+          const isExpanded = expandedSlot === i;
+          
+          return (
+            <div key={i} className="rounded p-1.5" style={{ background: program ? 'rgba(99,102,241,0.2)' : 'rgba(0,0,0,0.3)', border: `1px solid ${program ? '#6366f1' : '#333'}` }}>
+              {program ? (
+                <div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs">{program.programType === 'uhrome' ? '🌐' : program.programType === 'bitwatcher' ? '📊' : '🔧'}</span>
+                      <span className="text-indigo-300 text-xs font-bold">{COMPONENTS.program[program.programType]?.name || program.programType}</span>
+                    </div>
+                    <div className="flex gap-1">
+                      <button 
+                        onClick={() => setExpandedSlot(isExpanded ? null : i)} 
+                        className="px-1.5 py-0.5 rounded text-xs bg-indigo-800 text-indigo-200 hover:bg-indigo-700"
+                        title={isExpanded ? "Minimize" : "Expand"}
+                      >
+                        {isExpanded ? '−' : '+'}
+                      </button>
+                      <button 
+                        onClick={() => onEject(id, i)} 
+                        className="px-1.5 py-0.5 rounded text-xs bg-orange-800 text-orange-200 hover:bg-orange-700"
+                        title="Eject to canvas"
+                      >
+                        ⏏
+                      </button>
+                      <button 
+                        onClick={() => onRemoveFromRack(id, i)} 
+                        className="px-1.5 py-0.5 rounded text-xs bg-red-800 text-red-200 hover:bg-red-700"
+                        title="Delete program"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {isExpanded && (
+                    <div className="mt-2 p-2 rounded bg-black/40 border border-indigo-800/50">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Connector direction="input" color="#a855f7" connected={program.connected} nodeId={id} connectorId={`rack-program-in-${i}`} onStartConnection={onStartConnection} onEndConnection={onEndConnection} onDisconnect={onDisconnect} />
+                        <span className="text-purple-400 text-xs">PC IN</span>
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        {program.connected ? '● Connected' : '○ Not connected'}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        RAM: {COMPONENTS.program[program.programType]?.ramReq || 0}GB
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center text-gray-600 text-xs py-2">
+                  Empty Slot {i + 1}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      
+      <div className="mt-2 text-center text-gray-500 text-xs">
+        Drop programs here to store
+      </div>
+    </div>
+  );
+};
+
 // Uhrome Browser Component with tabs for YouBet and SkinMonkey
 const UhromeBrowser = ({ id, pcConnected, miningProgress, onBetUnitCoin, onSpendMoney, money, onStartConnection, onEndConnection, onDisconnect }) => {
   const [activeTab, setActiveTab] = useState('youbet');
@@ -1736,6 +1823,7 @@ export default function MiningGame() {
           'power-strip': { type: 'power-strip', position: { x: 50 + Math.random() * 100, y: 200 + Math.random() * 100 } },
           'miner': { type: 'miner', position: { x: 300 + Math.random() * 100, y: 250 + Math.random() * 100 } },
           'interface-hub': { type: 'interface-hub', position: { x: 500 + Math.random() * 100, y: 150 + Math.random() * 100 } },
+          'program-rack': { type: 'program-rack', position: { x: 450 + Math.random() * 100, y: 200 + Math.random() * 100 }, slots: [null, null, null] },
           'transformer-small': { type: 'transformer', transformerType: 'transformer-small', position: { x: 100 + Math.random() * 100, y: 150 + Math.random() * 100 } },
           'transformer-medium': { type: 'transformer', transformerType: 'transformer-medium', position: { x: 100 + Math.random() * 100, y: 150 + Math.random() * 100 } },
           'transformer-large': { type: 'transformer', transformerType: 'transformer-large', position: { x: 100 + Math.random() * 100, y: 150 + Math.random() * 100 } },
@@ -1758,6 +1846,109 @@ export default function MiningGame() {
     if (gameState.money >= price && gameState.canvasLevel < level) {
       setGameState(prev => ({ ...prev, money: prev.money - price, canvasLevel: level }));
     }
+  };
+
+  // Delete a node (not allowed for power-grid, pc, interface)
+  const handleDeleteNode = (nodeId) => {
+    const node = nodes[nodeId];
+    if (!node) return;
+    
+    // Protected nodes that cannot be deleted
+    const protectedTypes = ['power-grid', 'pc', 'interface'];
+    if (protectedTypes.includes(node.type)) return;
+    
+    // Remove all connections involving this node
+    setConnections(prev => prev.filter(c => {
+      const [fromNode] = c.from.split(':');
+      const [toNode] = c.to.split(':');
+      return fromNode !== nodeId && toNode !== nodeId;
+    }));
+    
+    // Remove the node
+    setNodes(prev => {
+      const updated = { ...prev };
+      delete updated[nodeId];
+      return updated;
+    });
+  };
+
+  // Eject program from rack to canvas
+  const handleEjectFromRack = (rackId, slotIndex) => {
+    const rack = nodes[rackId];
+    if (!rack || !rack.slots[slotIndex]) return;
+    
+    const program = rack.slots[slotIndex];
+    const newId = `${program.programType}-${nodeCounter}`;
+    setNodeCounter(prev => prev + 1);
+    
+    // Remove from rack and add as node
+    setNodes(prev => {
+      const updated = { ...prev };
+      const newSlots = [...rack.slots];
+      newSlots[slotIndex] = null;
+      updated[rackId] = { ...rack, slots: newSlots };
+      updated[newId] = { 
+        type: 'program', 
+        programType: program.programType, 
+        position: { x: rack.position.x + 230, y: rack.position.y + slotIndex * 50 } 
+      };
+      return updated;
+    });
+  };
+
+  // Remove program from rack (delete it)
+  const handleRemoveFromRack = (rackId, slotIndex) => {
+    const rack = nodes[rackId];
+    if (!rack || !rack.slots[slotIndex]) return;
+    
+    // Remove connections for this rack slot
+    setConnections(prev => prev.filter(c => {
+      return !c.from.includes(`${rackId}:rack-program`) && !c.to.includes(`${rackId}:rack-program-in-${slotIndex}`);
+    }));
+    
+    setNodes(prev => {
+      const updated = { ...prev };
+      const newSlots = [...rack.slots];
+      newSlots[slotIndex] = null;
+      updated[rackId] = { ...rack, slots: newSlots };
+      return updated;
+    });
+  };
+
+  // Store a program into the first available rack slot
+  const handleStoreToRack = (programId) => {
+    const program = nodes[programId];
+    if (!program || program.type !== 'program') return;
+    
+    // Find a rack with an empty slot
+    const rackEntry = Object.entries(nodes).find(([id, node]) => 
+      node.type === 'program-rack' && node.slots.some(s => s === null)
+    );
+    
+    if (!rackEntry) {
+      alert('No Program Rack with empty slots available! Buy a Program Rack from the shop.');
+      return;
+    }
+    
+    const [rackId, rack] = rackEntry;
+    const emptySlot = rack.slots.findIndex(s => s === null);
+    
+    // Remove connections from the program
+    setConnections(prev => prev.filter(c => {
+      const [fromNode] = c.from.split(':');
+      const [toNode] = c.to.split(':');
+      return fromNode !== programId && toNode !== programId;
+    }));
+    
+    // Add to rack and remove from nodes
+    setNodes(prev => {
+      const updated = { ...prev };
+      const newSlots = [...rack.slots];
+      newSlots[emptySlot] = { programType: program.programType, connected: false };
+      updated[rackId] = { ...rack, slots: newSlots };
+      delete updated[programId];
+      return updated;
+    });
   };
 
   // Calculate totals
@@ -1861,13 +2052,45 @@ export default function MiningGame() {
               {Object.entries(nodes).map(([id, node]) => (
                 <DraggableNode key={id} id={id} position={node.position} onPositionChange={handlePositionChange} scale={scale}>
                   {node.type === 'power-grid' && <PowerGridNode connected={connections.some(c => c.from === `${id}:power-out`)} totalWattage={totalWattage} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} />}
-                  {node.type === 'transformer' && <TransformerNode id={id} type={node.transformerType} powerConnected={hasPower(id)} outputConnected={connections.some(c => c.from === `${id}:power-out`)} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />}
-                  {node.type === 'power-strip' && <PowerStripNode id={id} powerConnected={hasPower(id)} outputs={[0,1,2,3].map(i => connections.some(c => c.from === `${id}:power-out-${i}`))} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />}
+                  {node.type === 'transformer' && (
+                    <div className="relative group">
+                      <TransformerNode id={id} type={node.transformerType} powerConnected={hasPower(id)} outputConnected={connections.some(c => c.from === `${id}:power-out`)} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />
+                      <button onClick={() => handleDeleteNode(id)} className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-600 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Delete">✕</button>
+                    </div>
+                  )}
+                  {node.type === 'power-strip' && (
+                    <div className="relative group">
+                      <PowerStripNode id={id} powerConnected={hasPower(id)} outputs={[0,1,2,3].map(i => connections.some(c => c.from === `${id}:power-out-${i}`))} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />
+                      <button onClick={() => handleDeleteNode(id)} className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-600 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Delete">✕</button>
+                    </div>
+                  )}
                   {node.type === 'pc' && <PCNode id={id} cpu={node.cpu} gpu={node.gpu} ram={node.ram} cooling={node.cooling} os={node.os} powerConnected={hasPower(id)} displayConnected={hasDisplay(id)} programConnections={[0,1,2,3].map(i => connections.some(c => c.from === `${id}:program-out-${i}`))} cpuOC={node.cpuOC || 0} gpuOC={node.gpuOC || 0} ramOC={node.ramOC || 0} isOverheated={node.isOverheated} currentTemp={node.currentTemp} onSlotDrop={(type, itemId, index) => handleSlotDrop(id, type, itemId, index)} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />}
-                  {node.type === 'miner' && <MinerNode id={id} powerConnected={hasPower(id)} displayConnected={hasDisplay(id)} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />}
-                  {node.type === 'interface-hub' && <InterfaceHubNode id={id} inputConnections={[0,1,2,3].map(i => connections.some(c => c.to === `${id}:display-in-${i}`))} outputConnected={connections.some(c => c.from === `${id}:signal-out`)} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />}
+                  {node.type === 'miner' && (
+                    <div className="relative group">
+                      <MinerNode id={id} powerConnected={hasPower(id)} displayConnected={hasDisplay(id)} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />
+                      <button onClick={() => handleDeleteNode(id)} className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-600 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Delete">✕</button>
+                    </div>
+                  )}
+                  {node.type === 'interface-hub' && (
+                    <div className="relative group">
+                      <InterfaceHubNode id={id} inputConnections={[0,1,2,3].map(i => connections.some(c => c.to === `${id}:display-in-${i}`))} outputConnected={connections.some(c => c.from === `${id}:signal-out`)} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />
+                      <button onClick={() => handleDeleteNode(id)} className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-600 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Delete">✕</button>
+                    </div>
+                  )}
                   {node.type === 'interface' && <InterfaceNode id={id} connected={connections.some(c => c.to === `${id}:display-in`)} pcData={getPCDataForInterface(id)} hasMinerConnected={hasMinerConnected(id)} programData={getProgramDataForInterface(id)} unitCoin={gameState.unitCoin} unitCoinPrice={gameState.unitCoinPrice} money={gameState.money} priceHistory={gameState.priceHistory} onBuy={handleBuy} onSell={handleSell} onSellAll={handleSellAll} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />}
-                  {node.type === 'program' && <ProgramNode id={id} type={node.programType} pcConnected={connections.some(c => c.to === `${id}:program-in`)} pcData={getPCForProgram(id)} miningProgress={gameState.unitCoin} money={gameState.money} onSetOverclock={handleSetOverclock} onBetUnitCoin={(amount) => setGameState(prev => ({ ...prev, unitCoin: prev.unitCoin + amount }))} onSpendMoney={(amount) => setGameState(prev => ({ ...prev, money: prev.money - amount }))} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />}
+                  {node.type === 'program' && (
+                    <div className="relative group">
+                      <ProgramNode id={id} type={node.programType} pcConnected={connections.some(c => c.to === `${id}:program-in`)} pcData={getPCForProgram(id)} miningProgress={gameState.unitCoin} money={gameState.money} onSetOverclock={handleSetOverclock} onBetUnitCoin={(amount) => setGameState(prev => ({ ...prev, unitCoin: prev.unitCoin + amount }))} onSpendMoney={(amount) => setGameState(prev => ({ ...prev, money: prev.money - amount }))} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />
+                      <button onClick={() => handleStoreToRack(id)} className="absolute -top-2 -right-8 w-5 h-5 rounded-full bg-indigo-600 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Store in Rack">📥</button>
+                      <button onClick={() => handleDeleteNode(id)} className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-600 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Delete">✕</button>
+                    </div>
+                  )}
+                  {node.type === 'program-rack' && (
+                    <div className="relative group">
+                      <ProgramRackNode id={id} slots={node.slots.map((s, i) => s ? { ...s, connected: connections.some(c => c.to === `${id}:rack-program-in-${i}`) } : null)} onEject={handleEjectFromRack} onRemoveFromRack={handleRemoveFromRack} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />
+                      <button onClick={() => handleDeleteNode(id)} className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-600 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Delete">✕</button>
+                    </div>
+                  )}
                 </DraggableNode>
               ))}
             </div>
@@ -1914,6 +2137,7 @@ export default function MiningGame() {
                       <ShopItem id="power-strip" type="node" name="Power Strip" specs="4-way" price={25} owned={false} onBuy={handleShopBuy} alwaysBuyable />
                       <ShopItem id="miner" type="node" name="aSIC B1 Miner" specs="0.0167/s" price={100} owned={false} onBuy={handleShopBuy} alwaysBuyable />
                       <ShopItem id="interface-hub" type="node" name="Interface Hub" specs="4 inputs" price={40} owned={false} onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="program-rack" type="node" name="Program Rack" specs="3 slots" price={75} owned={false} onBuy={handleShopBuy} alwaysBuyable />
                     </div>
                   </div>
 
