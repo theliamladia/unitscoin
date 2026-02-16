@@ -8,6 +8,7 @@ const INITIAL_STATE = {
   unitCoinPrice: 2.00,
   priceHistory: [2.00],
   canvasLevel: 1, // 1 = 100%, 2 = 75%, 3 = 50%
+  viewScale: 1,
 };
 
 // Canvas zoom prices
@@ -1554,7 +1555,7 @@ export default function MiningGame() {
   const [cheatInput, setCheatInput] = useState('');
   
   const workspaceRef = useRef(null);
-  const scale = CANVAS_SCALES[gameState.canvasLevel];
+  const scale = gameState.viewScale ?? CANVAS_SCALES[gameState.canvasLevel];
 
   // Auto-save to localStorage whenever state changes
   useEffect(() => {
@@ -2032,7 +2033,19 @@ export default function MiningGame() {
     const price = CANVAS_PRICES[level];
     setGameState(prev => {
       if (prev.money < price || prev.canvasLevel >= level) return prev;
-      return { ...prev, money: prev.money - price, canvasLevel: level };
+      return { ...prev, money: prev.money - price, canvasLevel: level, viewScale: CANVAS_SCALES[level] };
+    });
+  };
+
+  const handleWorkspaceWheel = (e) => {
+    if (gameState.canvasLevel < 3) return;
+    e.preventDefault();
+    setGameState(prev => {
+      const minScale = CANVAS_SCALES[prev.canvasLevel];
+      const next = prev.viewScale + (e.deltaY > 0 ? -0.05 : 0.05);
+      const clamped = Math.max(minScale, Math.min(1, next));
+      if (clamped === prev.viewScale) return prev;
+      return { ...prev, viewScale: clamped };
     });
   };
 
@@ -2227,6 +2240,7 @@ export default function MiningGame() {
           {/* Workspace */}
           <div
             ref={workspaceRef}
+            onWheel={handleWorkspaceWheel}
             className="flex-1 rounded-xl relative overflow-hidden"
             style={{ background: 'linear-gradient(135deg, rgba(12,16,28,0.9), rgba(8,12,20,0.95))', border: '1px solid rgba(255,255,255,0.05)', height: '580px' }}
           >
@@ -2288,7 +2302,7 @@ export default function MiningGame() {
             </div>
 
             <div className="absolute bottom-2 left-2 right-2 p-1.5 rounded bg-black/60 border border-blue-900/30">
-              <div className="text-blue-400 text-xs">💡 Drag nodes • Connect outputs→inputs • Click input to disconnect</div>
+              <div className="text-blue-400 text-xs">💡 Drag nodes • Connect outputs→inputs • Click input to disconnect {gameState.canvasLevel >= 3 ? '• Mouse wheel to zoom' : ''}</div>
             </div>
           </div>
 
