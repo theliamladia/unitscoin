@@ -66,6 +66,7 @@ const COMPONENTS = {
     'uhrome': { name: 'Uhrome Browser', description: 'Web Browser', price: 0, target: 'browser', ramReq: 6 },
     'black-market': { name: 'Black Market', description: 'Underground qCoin Exchange', price: 300, target: 'blackmarket', ramReq: 12 },
     'variety-exe': { name: 'Variety.exe', description: 'UnitCoin to qCoin Tumbler', price: 100, target: 'tumbler', ramReq: 8 },
+    'rrtumblr': { name: 'RRtumblr.exe', description: 'qCoin Re-Tumbler', price: 80, target: 'retumbler', ramReq: 10 },
   },
 };
 
@@ -984,16 +985,19 @@ const UhromeBrowser = ({ id, pcConnected, miningProgress, onUnitCoinDelta, onSpe
 };
 
 // Program Node (Burners, BitWatcher, and Uhrome Browser)
-const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCoin, tumblerFeed = 0, onSetOverclock, onFeedToTumbler, onUnitCoinDelta, onSpendMoney, onStartConnection, onEndConnection, onDisconnect }) => {
+const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCoin, tumblerFeed = 0, onSetOverclock, onFeedToTumbler, onUnitCoinDelta, onQCoinDelta, onSpendMoney, onStartConnection, onEndConnection, onDisconnect }) => {
   const [terminalHistory, setTerminalHistory] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [feedAmount, setFeedAmount] = useState('1');
+  const [blackOpsLog, setBlackOpsLog] = useState(['Signal ready. Choose an operation.']);
+  const [blackOpsInput, setBlackOpsInput] = useState('');
+  const [retumblerLog, setRetumblerLog] = useState('');
   const terminalRef = useRef(null);
   const program = COMPONENTS.program[type];
-  const target = program?.target; // 'cpu', 'gpu', 'ram', 'display', 'browser', 'blackmarket', or 'tumbler'
+  const target = program?.target; // 'cpu', 'gpu', 'ram', 'display', 'browser', 'blackmarket', 'tumbler', or 'retumbler'
 
   useEffect(() => {
-    if (target && target !== 'display' && target !== 'browser' && target !== 'blackmarket' && target !== 'tumbler') {
+    if (target && target !== 'display' && target !== 'browser' && target !== 'blackmarket' && target !== 'tumbler' && target !== 'retumbler') {
       setTerminalHistory([
         { type: 'system', text: `${program?.name} v1.0 initialized` },
         { type: 'system', text: 'Type "oc help" for commands' }
@@ -1129,6 +1133,70 @@ const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCo
   };
 
   const borderColor = target === 'cpu' ? '#00d4ff' : target === 'gpu' ? '#ff6b00' : target === 'ram' ? '#b44aff' : '#22c55e';
+  const pushBlackOpsLog = (line) => setBlackOpsLog(prev => [line, ...prev].slice(0, 5));
+
+  const runBlackOp = (op) => {
+    const ops = {
+      phish: { label: 'PhishRun', cost: 1.5, failChance: 0.5, minMult: 1.1, maxMult: 2.2, failureMult: 0.4 },
+      exploit: { label: 'ExploitSweep', cost: 4, failChance: 0.58, minMult: 1.4, maxMult: 2.8, failureMult: 0.55 },
+      ransomware: { label: 'RansomNode', cost: 10, failChance: 0.64, minMult: 1.8, maxMult: 4.2, failureMult: 0.8 },
+    };
+    const selected = ops[op];
+    if (!selected) return;
+    if (!pcConnected) {
+      pushBlackOpsLog(`[${selected.label}] Link a PC first.`);
+      return;
+    }
+    if ((qCoin || 0) < selected.cost) {
+      pushBlackOpsLog(`[${selected.label}] Need ${selected.cost.toFixed(2)} qC.`);
+      return;
+    }
+
+    onQCoinDelta(-selected.cost, 'blackmarket-op');
+    const roll = Math.random();
+    if (roll < selected.failChance) {
+      const penalty = selected.cost * selected.failureMult;
+      onQCoinDelta(-penalty, 'blackmarket-op');
+      pushBlackOpsLog(`[${selected.label}] Trace hit. Lost ${(selected.cost + penalty).toFixed(3)} qC.`);
+      return;
+    }
+
+    const mult = selected.minMult + (Math.random() * (selected.maxMult - selected.minMult));
+    const reward = selected.cost * mult;
+    onQCoinDelta(reward, 'blackmarket-op');
+    pushBlackOpsLog(`[${selected.label}] Op clean. Net +${(reward - selected.cost).toFixed(3)} qC.`);
+  };
+
+  const executeBlackMarketCommand = (rawCommand) => {
+    const cmd = (rawCommand || '').trim().toLowerCase();
+    if (!cmd) return;
+    pushBlackOpsLog(`> ${cmd}`);
+
+    if (cmd === 'help') {
+      pushBlackOpsLog('Commands: run phish | run exploit | run ransomware | status | clear');
+      return;
+    }
+    if (cmd === 'status') {
+      pushBlackOpsLog(`Balance: ${(qCoin || 0).toFixed(4)} qC | Link: ${pcConnected ? 'UP' : 'DOWN'}`);
+      return;
+    }
+    if (cmd === 'clear') {
+      setBlackOpsLog([]);
+      return;
+    }
+
+    const [action, op] = cmd.split(/\s+/);
+    if (action === 'run') {
+      if (op === 'phish' || op === 'exploit' || op === 'ransomware') {
+        runBlackOp(op);
+      } else {
+        pushBlackOpsLog('Unknown op. Use: run phish | run exploit | run ransomware');
+      }
+      return;
+    }
+
+    pushBlackOpsLog('Unknown command. Type help.');
+  };
 
   // BitWatcher rendering
   if (target === 'display') {
@@ -1240,15 +1308,42 @@ const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCo
         </div>
 
         <div className="rounded p-2.5" style={{ background: 'rgba(0,0,0,0.55)', border: '1px solid rgba(220,38,38,0.45)' }}>
-          <div className="text-red-400 text-xs font-mono mb-1">ACCESS: RESTRICTED</div>
-          <div className="text-gray-300 text-xs leading-relaxed">
-            qCoin is making it's way to the market.... be very careful.
+          <div className="text-red-400 text-xs font-mono mb-1">ACCESS: HOSTILE OPS</div>
+          <div className="text-gray-300 text-xs leading-relaxed mb-2">
+            Deploy malicious scripts for qCoin gain. High risk operations can backfire.
           </div>
+          <div className="text-[10px] text-red-500 font-mono mb-2">Type `help` in the terminal to see commands.</div>
+
+          <div className="rounded bg-black/70 border border-red-900/50 text-[10px] mb-2">
+            <div className="p-2 space-y-1 min-h-[86px] max-h-[120px] overflow-y-auto">
+              {blackOpsLog.map((line, idx) => (
+                <div key={idx} className="text-red-300 font-mono">{line}</div>
+              ))}
+            </div>
+            <div className="border-t border-red-950/70 p-1 flex items-center gap-1">
+              <span className="text-red-500 font-mono text-xs">{'>'}</span>
+              <input
+                type="text"
+                value={blackOpsInput}
+                onChange={(e) => setBlackOpsInput(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === 'Enter') {
+                    executeBlackMarketCommand(blackOpsInput);
+                    setBlackOpsInput('');
+                  }
+                }}
+                placeholder="help"
+                className="flex-1 bg-transparent text-red-300 text-xs font-mono focus:outline-none"
+              />
+            </div>
+          </div>
+
           <div className="mt-2 pt-2 border-t border-red-950/60 flex items-center justify-between text-xs">
             <span className="text-gray-500">qCoin Balance</span>
             <span className="text-red-300 font-mono">{(qCoin || 0).toFixed(4)}</span>
           </div>
-          <div className="mt-1 text-[10px] text-red-500 font-mono">No listings available yet.</div>
         </div>
       </div>
     );
@@ -1306,6 +1401,67 @@ const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCo
             </button>
           </div>
           <div className="text-[10px] text-red-500 mt-2">Converts buffered UnitCoin into qCoin at roughly 0.5 per second.</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (target === 'retumbler') {
+    const qBalance = qCoin || 0;
+    const fee = qBalance * 0.3;
+    const unitCoinOut = qBalance - fee;
+
+    const retumbleAll = () => {
+      if (!pcConnected || qBalance <= 0) return;
+      onQCoinDelta(-qBalance, 'retumbler');
+      onUnitCoinDelta(unitCoinOut, 'retumbler');
+      setRetumblerLog(`Retumbled ${qBalance.toFixed(3)} qC -> ${unitCoinOut.toFixed(3)} UC (fee ${fee.toFixed(3)} qC).`);
+    };
+
+    return (
+      <div style={{ background: 'linear-gradient(135deg, rgba(34,8,8,0.96), rgba(12,4,4,0.98))', border: `2px solid ${pcConnected ? '#ef4444' : '#333'}`, borderRadius: '10px', padding: '12px', minWidth: '300px', boxShadow: pcConnected ? '0 0 20px rgba(239,68,68,0.2)' : 'none' }}>
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">🩸</span>
+            <div>
+              <div className="text-red-400 font-bold text-xs">{program.name}</div>
+              <div className={`text-xs ${pcConnected ? 'text-red-500' : 'text-gray-500'}`}>{pcConnected ? '● LINKED' : '○ NO PC'}</div>
+            </div>
+          </div>
+          <div className="text-xs text-red-300 font-mono">30% FEE</div>
+        </div>
+
+        <div className="flex items-center gap-2 mb-2 p-1.5 rounded bg-black/50 border border-red-900/40">
+          <Connector direction="input" color="#a855f7" connected={pcConnected} nodeId={id} connectorId="program-in" onStartConnection={onStartConnection} onEndConnection={onEndConnection} onDisconnect={onDisconnect} />
+          <span className="text-purple-300 text-xs">PC IN</span>
+        </div>
+
+        <div className="p-2 rounded bg-black/40 border border-red-900/40">
+          <div className="flex justify-between text-xs mb-1">
+            <span className="text-gray-400">qCoin Input</span>
+            <span className="text-red-300 font-mono">{qBalance.toFixed(3)}</span>
+          </div>
+          <div className="flex justify-between text-xs mb-1">
+            <span className="text-gray-400">Fee (30%)</span>
+            <span className="text-red-500 font-mono">{fee.toFixed(3)}</span>
+          </div>
+          <div className="flex justify-between text-xs mb-2">
+            <span className="text-gray-400">UnitCoin Output</span>
+            <span className="text-yellow-300 font-mono">{unitCoinOut.toFixed(3)}</span>
+          </div>
+          <button
+            onClick={retumbleAll}
+            disabled={!pcConnected || qBalance <= 0}
+            className="w-full py-1 rounded text-xs font-bold"
+            style={{
+              background: pcConnected && qBalance > 0 ? '#7f1d1d' : '#1f2937',
+              color: pcConnected && qBalance > 0 ? '#fecaca' : '#6b7280',
+              cursor: pcConnected && qBalance > 0 ? 'pointer' : 'not-allowed'
+            }}
+          >
+            RETUMBLE ALL qC -> UC
+          </button>
+          {retumblerLog && <div className="text-[10px] text-red-400 mt-2 font-mono">{retumblerLog}</div>}
         </div>
       </div>
     );
@@ -2113,11 +2269,19 @@ export default function MiningGame() {
   };
 
   const handleProgramUnitCoinDelta = useCallback((delta, source) => {
-    // Only allow UnitCoin deltas from explicit YouBet blackjack actions.
-    if (source !== 'youbet-blackjack') return;
+    const allowedSources = new Set(['youbet-blackjack', 'retumbler']);
+    if (!allowedSources.has(source)) return;
     const numericDelta = Number(delta);
     if (!Number.isFinite(numericDelta) || numericDelta === 0) return;
     setGameState(prev => ({ ...prev, unitCoin: Math.max(0, prev.unitCoin + numericDelta) }));
+  }, []);
+
+  const handleProgramQCoinDelta = useCallback((delta, source) => {
+    const allowedSources = new Set(['blackmarket-op', 'retumbler']);
+    if (!allowedSources.has(source)) return;
+    const numericDelta = Number(delta);
+    if (!Number.isFinite(numericDelta) || numericDelta === 0) return;
+    setGameState(prev => ({ ...prev, qCoin: Math.max(0, prev.qCoin + numericDelta) }));
   }, []);
 
   const handleShopBuy = (id, type, price, currency = 'money') => {
@@ -2152,6 +2316,7 @@ export default function MiningGame() {
         'uhrome': { type: 'program', programType: 'uhrome', position: { x: 480 + Math.random() * 100, y: 280 + Math.random() * 100 } },
         'black-market': { type: 'program', programType: 'black-market', position: { x: 500 + Math.random() * 100, y: 300 + Math.random() * 100 } },
         'variety-exe': { type: 'program', programType: 'variety-exe', feedUC: 0, position: { x: 520 + Math.random() * 100, y: 320 + Math.random() * 100 } },
+        'rrtumblr': { type: 'program', programType: 'rrtumblr', position: { x: 540 + Math.random() * 100, y: 340 + Math.random() * 100 } },
       };
       
       if (nodeTypes[id]) {
@@ -2431,7 +2596,7 @@ export default function MiningGame() {
                   {node.type === 'interface' && <InterfaceNode id={id} connected={connections.some(c => c.to === `${id}:display-in`)} pcData={getPCDataForInterface(id)} hasMinerConnected={hasMinerConnected(id)} sourceInfo={getSourceInfoForInterface(id)} onSwitchSource={handleSwitchInterfaceSource} programData={getProgramDataForInterface(id)} unitCoin={gameState.unitCoin} unitCoinPrice={gameState.unitCoinPrice} money={gameState.money} priceHistory={gameState.priceHistory} onBuy={handleBuy} onSell={handleSell} onSellAll={handleSellAll} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />}
                   {node.type === 'program' && (
                     <div className="relative group">
-                      <ProgramNode id={id} type={node.programType} pcConnected={connections.some(c => c.to === `${id}:program-in`)} pcData={getPCForProgram(id)} miningProgress={gameState.unitCoin} money={gameState.money} qCoin={gameState.qCoin} tumblerFeed={node.feedUC || 0} onSetOverclock={handleSetOverclock} onFeedToTumbler={handleFeedToTumbler} onUnitCoinDelta={handleProgramUnitCoinDelta} onSpendMoney={(amount) => setGameState(prev => ({ ...prev, money: prev.money - amount }))} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />
+                      <ProgramNode id={id} type={node.programType} pcConnected={connections.some(c => c.to === `${id}:program-in`)} pcData={getPCForProgram(id)} miningProgress={gameState.unitCoin} money={gameState.money} qCoin={gameState.qCoin} tumblerFeed={node.feedUC || 0} onSetOverclock={handleSetOverclock} onFeedToTumbler={handleFeedToTumbler} onUnitCoinDelta={handleProgramUnitCoinDelta} onQCoinDelta={handleProgramQCoinDelta} onSpendMoney={(amount) => setGameState(prev => ({ ...prev, money: prev.money - amount }))} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />
                       <button onClick={() => handleStoreToRack(id)} className="absolute -top-2 -right-8 w-5 h-5 rounded-full bg-indigo-600 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Store in Rack">📥</button>
                       <button onClick={() => handleDeleteNode(id)} className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-600 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Delete">✕</button>
                     </div>
@@ -2510,8 +2675,9 @@ export default function MiningGame() {
                     <div className="space-y-1">
                       <ShopItem id="black-market" type="black-market" name="Black Market" specs="qCoin Exchange 12GB" price={300} owned={false} onBuy={handleShopBuy} alwaysBuyable currency="qcoin" />
                       <ShopItem id="variety-exe" type="black-market" name="Variety.exe" specs="Tumbler 0.5 qC/s" price={100} owned={false} onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="rrtumblr" type="black-market" name="RRtumblr.exe" specs="qC -> UC (30% fee)" price={80} owned={false} onBuy={handleShopBuy} alwaysBuyable currency="qcoin" />
                     </div>
-                    <div className="text-[10px] text-red-700 mt-1">Black Market purchases use ◈ qCoin (except Variety.exe at $100 starter).</div>
+                    <div className="text-[10px] text-red-700 mt-1">Run hostile ops for qCoin. RRtumblr.exe converts qCoin back to UnitCoin with a 30% burn.</div>
                   </div>
 
                   {/* Cooling */}
