@@ -83,7 +83,7 @@ const STARTER_GFI_DEVICE_WATTAGE = 220;
 const PRICE_TARGET = 2.0;
 const PRICE_FLOOR = 1.2;
 const PRICE_CEILING = 5.0;
-const TICK_MS = 200;
+const TICK_MS = 1000;
 
 // Calculate UGS
 const calculateUGS = (cpu, gpu, ramSlots, cpuOC = 0, gpuOC = 0, ramOC = 0) => {
@@ -619,7 +619,7 @@ const ProgramRackNode = ({ id, slots, onEject, onRemoveFromRack, onStartConnecti
 };
 
 // Uhrome Browser Component with tabs for YouBet and SkinMonkey
-const UhromeBrowser = ({ id, pcConnected, miningProgress, onBetUnitCoin, onSpendMoney, money, onStartConnection, onEndConnection, onDisconnect }) => {
+const UhromeBrowser = ({ id, pcConnected, miningProgress, onUnitCoinDelta, onSpendMoney, money, onStartConnection, onEndConnection, onDisconnect }) => {
   const [activeTab, setActiveTab] = useState('youbet');
   const [url, setUrl] = useState('youbet.uc');
   
@@ -714,7 +714,7 @@ const UhromeBrowser = ({ id, pcConnected, miningProgress, onBetUnitCoin, onSpend
     const betAmount = parseFloat(bet) || 0;
     if (betAmount <= 0) { setBjMessage('Enter a valid bet!'); return; }
     if (miningProgress < betAmount) { setBjMessage('Not enough UC!'); return; }
-    onBetUnitCoin(-betAmount);
+    onUnitCoinDelta(-betAmount, 'youbet-blackjack');
     const pHand = [getRandomCard(), getRandomCard()];
     const dHand = [getRandomCard(), getRandomCard()];
     setPlayerHand(pHand); setDealerHand(dHand); setBjGameState('playing');
@@ -751,7 +751,7 @@ const UhromeBrowser = ({ id, pcConnected, miningProgress, onBetUnitCoin, onSpend
     else if (pTotal > dTotal) { winAmount = betAmount * 2; setBjMessage('You win!'); }
     else if (pTotal < dTotal) setBjMessage('Dealer wins.');
     else { winAmount = betAmount; setBjMessage('Push!'); }
-    if (winAmount > 0) onBetUnitCoin(winAmount);
+    if (winAmount > 0) onUnitCoinDelta(winAmount, 'youbet-blackjack');
     setLastWin(winAmount);
   };
 
@@ -984,7 +984,7 @@ const UhromeBrowser = ({ id, pcConnected, miningProgress, onBetUnitCoin, onSpend
 };
 
 // Program Node (Burners, BitWatcher, and Uhrome Browser)
-const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCoin, tumblerFeed = 0, onSetOverclock, onFeedToTumbler, onBetUnitCoin, onSpendMoney, onStartConnection, onEndConnection, onDisconnect }) => {
+const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCoin, tumblerFeed = 0, onSetOverclock, onFeedToTumbler, onUnitCoinDelta, onSpendMoney, onStartConnection, onEndConnection, onDisconnect }) => {
   const [terminalHistory, setTerminalHistory] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [feedAmount, setFeedAmount] = useState('1');
@@ -1210,7 +1210,7 @@ const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCo
         pcConnected={pcConnected}
         miningProgress={miningProgress}
         money={money}
-        onBetUnitCoin={onBetUnitCoin}
+        onUnitCoinDelta={onUnitCoinDelta}
         onSpendMoney={onSpendMoney}
         onStartConnection={onStartConnection}
         onEndConnection={onEndConnection}
@@ -2114,6 +2114,14 @@ export default function MiningGame() {
     });
   };
 
+  const handleProgramUnitCoinDelta = useCallback((delta, source) => {
+    // Only allow UnitCoin deltas from explicit YouBet blackjack actions.
+    if (source !== 'youbet-blackjack') return;
+    const numericDelta = Number(delta);
+    if (!Number.isFinite(numericDelta) || numericDelta === 0) return;
+    setGameState(prev => ({ ...prev, unitCoin: Math.max(0, prev.unitCoin + numericDelta) }));
+  }, []);
+
   const handleShopBuy = (id, type, price, currency = 'money') => {
     const canAfford = currency === 'qcoin' ? gameState.qCoin >= price : gameState.money >= price;
     if (!canAfford) return;
@@ -2425,7 +2433,7 @@ export default function MiningGame() {
                   {node.type === 'interface' && <InterfaceNode id={id} connected={connections.some(c => c.to === `${id}:display-in`)} pcData={getPCDataForInterface(id)} hasMinerConnected={hasMinerConnected(id)} sourceInfo={getSourceInfoForInterface(id)} onSwitchSource={handleSwitchInterfaceSource} programData={getProgramDataForInterface(id)} unitCoin={gameState.unitCoin} unitCoinPrice={gameState.unitCoinPrice} money={gameState.money} priceHistory={gameState.priceHistory} onBuy={handleBuy} onSell={handleSell} onSellAll={handleSellAll} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />}
                   {node.type === 'program' && (
                     <div className="relative group">
-                      <ProgramNode id={id} type={node.programType} pcConnected={connections.some(c => c.to === `${id}:program-in`)} pcData={getPCForProgram(id)} miningProgress={gameState.unitCoin} money={gameState.money} qCoin={gameState.qCoin} tumblerFeed={node.feedUC || 0} onSetOverclock={handleSetOverclock} onFeedToTumbler={handleFeedToTumbler} onBetUnitCoin={(amount) => setGameState(prev => ({ ...prev, unitCoin: prev.unitCoin + amount }))} onSpendMoney={(amount) => setGameState(prev => ({ ...prev, money: prev.money - amount }))} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />
+                      <ProgramNode id={id} type={node.programType} pcConnected={connections.some(c => c.to === `${id}:program-in`)} pcData={getPCForProgram(id)} miningProgress={gameState.unitCoin} money={gameState.money} qCoin={gameState.qCoin} tumblerFeed={node.feedUC || 0} onSetOverclock={handleSetOverclock} onFeedToTumbler={handleFeedToTumbler} onUnitCoinDelta={handleProgramUnitCoinDelta} onSpendMoney={(amount) => setGameState(prev => ({ ...prev, money: prev.money - amount }))} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />
                       <button onClick={() => handleStoreToRack(id)} className="absolute -top-2 -right-8 w-5 h-5 rounded-full bg-indigo-600 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Store in Rack">📥</button>
                       <button onClick={() => handleDeleteNode(id)} className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-600 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Delete">✕</button>
                     </div>
