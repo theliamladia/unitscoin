@@ -1697,16 +1697,18 @@ const ConnectionLine = ({ startPos, endPos, color, isDrawing }) => {
 };
 
 // Shop Item
-const ShopItem = ({ id, type, name, specs, price, owned, onBuy, alwaysBuyable, currency = 'money' }) => {
+const ShopItem = ({ id, type, name, specs, price, owned, quantity, draggableItem = false, onBuy, alwaysBuyable, currency = 'money' }) => {
   const colors = { cpu: '#00d4ff', gpu: '#ff6b00', ram: '#b44aff', os: '#22c55e', node: '#a855f7', cooling: '#06b6d4', program: '#22c55e', transformer: '#ff9500', 'black-market': '#ef4444' };
-  const canBuy = alwaysBuyable || !owned;
+  const count = typeof quantity === 'number' ? quantity : (owned ? 1 : 0);
+  const canBuy = alwaysBuyable || count <= 0;
+  const canDrag = draggableItem && count > 0;
   
   return (
     <div
-      draggable={owned && !alwaysBuyable}
-      onDragStart={(e) => { if (owned) { e.dataTransfer.setData('itemId', id); e.dataTransfer.setData('itemType', type); }}}
+      draggable={canDrag}
+      onDragStart={(e) => { if (canDrag) { e.dataTransfer.setData('itemId', id); e.dataTransfer.setData('itemType', type); }}}
       className="p-1.5 rounded transition-all"
-      style={{ background: owned && !alwaysBuyable ? `${colors[type]}10` : 'rgba(255,255,255,0.02)', border: `1px solid ${owned && !alwaysBuyable ? colors[type] + '40' : 'rgba(255,255,255,0.08)'}`, cursor: owned && !alwaysBuyable ? 'grab' : 'default', opacity: owned || alwaysBuyable ? 1 : 0.5 }}
+      style={{ background: canDrag ? `${colors[type]}10` : 'rgba(255,255,255,0.02)', border: `1px solid ${canDrag ? colors[type] + '40' : 'rgba(255,255,255,0.08)'}`, cursor: canDrag ? 'grab' : 'default', opacity: count > 0 || alwaysBuyable ? 1 : 0.5 }}
     >
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium" style={{ color: colors[type] }}>{name}</span>
@@ -1718,7 +1720,7 @@ const ShopItem = ({ id, type, name, specs, price, owned, onBuy, alwaysBuyable, c
             {currency === 'qcoin' ? `◈${price}` : `$${price}`}
           </button>
         )}
-        {owned && !alwaysBuyable && <span className="text-gray-600 text-xs">⋮⋮</span>}
+        {canDrag && <span className="text-gray-600 text-xs">x{count}</span>}
       </div>
       <div className="text-xs text-gray-500">{specs}</div>
     </div>
@@ -1779,6 +1781,25 @@ const loadSavedState = () => {
   return null;
 };
 
+const normalizeInventory = (rawInventory) => {
+  const normalized = {};
+  if (!rawInventory || typeof rawInventory !== 'object') return normalized;
+  Object.entries(rawInventory).forEach(([id, value]) => {
+    const count = typeof value === 'number' ? Math.floor(value) : (value ? 1 : 0);
+    if (count > 0) normalized[id] = count;
+  });
+  return normalized;
+};
+
+const normalizeProgramUnlocks = (rawUnlocks) => {
+  const normalized = {};
+  if (!rawUnlocks || typeof rawUnlocks !== 'object') return normalized;
+  Object.entries(rawUnlocks).forEach(([id, value]) => {
+    normalized[id] = !!value;
+  });
+  return normalized;
+};
+
 // Main Game
 export default function MiningGame() {
   const [savedState] = useState(() => loadSavedState());
@@ -1792,7 +1813,8 @@ export default function MiningGame() {
   const [connections, setConnections] = useState(savedState?.connections || []);
   const [drawingConnection, setDrawingConnection] = useState(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-  const [inventory, setInventory] = useState(savedState?.inventory || { 'cpu-1': true, 'gpu-8': true, 'ram-8': true, 'trader-os': true });
+  const [inventory, setInventory] = useState(() => normalizeInventory(savedState?.inventory));
+  const [programUnlocks, setProgramUnlocks] = useState(() => normalizeProgramUnlocks(savedState?.programUnlocks));
   const [shopOpen, setShopOpen] = useState(true);
   const [nodeCounter, setNodeCounter] = useState(savedState?.nodeCounter || 2);
   const [cheatTerminalOpen, setCheatTerminalOpen] = useState(false);
@@ -1809,6 +1831,7 @@ export default function MiningGame() {
       nodes,
       connections,
       inventory,
+      programUnlocks,
       nodeCounter,
       savedAt: Date.now()
     };
@@ -1817,7 +1840,7 @@ export default function MiningGame() {
     } catch (e) {
       console.log('Failed to save:', e);
     }
-  }, [gameState, nodes, connections, inventory, nodeCounter]);
+  }, [gameState, nodes, connections, inventory, programUnlocks, nodeCounter]);
 
   const [resetConfirm, setResetConfirm] = useState(false);
 
@@ -2242,16 +2265,33 @@ export default function MiningGame() {
   };
 
   const handleSlotDrop = (nodeId, type, id, index) => {
+    const available = inventory[id] || 0;
+    if (available <= 0) return;
+
+    const node = nodes[nodeId];
+    if (!node) return;
+
+    const previousItem = type === 'ram' && typeof index === 'number' ? node.ram[index] : node[type];
+    if (previousItem === id) return;
+
     setNodes(prev => {
-      const node = { ...prev[nodeId] };
+      const nextNode = { ...prev[nodeId] };
       if (type === 'ram' && typeof index === 'number') {
-        const newRam = [...node.ram];
+        const newRam = [...nextNode.ram];
         newRam[index] = id;
-        node.ram = newRam;
+        nextNode.ram = newRam;
       } else {
-        node[type] = id;
+        nextNode[type] = id;
       }
-      return { ...prev, [nodeId]: node };
+      return { ...prev, [nodeId]: nextNode };
+    });
+
+    setInventory(prev => {
+      const next = { ...prev };
+      next[id] = (next[id] || 0) - 1;
+      if (next[id] <= 0) delete next[id];
+      if (previousItem) next[previousItem] = (next[previousItem] || 0) + 1;
+      return next;
     });
   };
 
@@ -2302,24 +2342,35 @@ export default function MiningGame() {
     setGameState(prev => ({ ...prev, qCoin: Math.max(0, prev.qCoin + numericDelta) }));
   }, []);
 
+  const getProgramPrice = useCallback((id, basePrice) => (programUnlocks[id] ? 0 : basePrice), [programUnlocks]);
+
   const handleShopBuy = (id, type, price, currency = 'money') => {
-    const canAfford = currency === 'qcoin' ? gameState.qCoin >= price : gameState.money >= price;
+    const isProgramUnlock = type === 'program' || type === 'black-market';
+    const effectivePrice = isProgramUnlock && programUnlocks[id] ? 0 : price;
+    const canAfford = currency === 'qcoin' ? gameState.qCoin >= effectivePrice : gameState.money >= effectivePrice;
     if (!canAfford) return;
 
-    setGameState(prev => {
-      if (currency === 'qcoin') {
-        if (prev.qCoin < price) return prev;
-        return { ...prev, qCoin: prev.qCoin - price };
-      }
-      if (prev.money < price) return prev;
-      return { ...prev, money: prev.money - price };
-    });
+    if (effectivePrice > 0) {
+      setGameState(prev => {
+        if (currency === 'qcoin') {
+          if (prev.qCoin < effectivePrice) return prev;
+          return { ...prev, qCoin: prev.qCoin - effectivePrice };
+        }
+        if (prev.money < effectivePrice) return prev;
+        return { ...prev, money: prev.money - effectivePrice };
+      });
+    }
+
+    if (isProgramUnlock && !programUnlocks[id]) {
+      setProgramUnlocks(prev => ({ ...prev, [id]: true }));
+    }
     
     if (type === 'node' || type === 'transformer' || type === 'program' || type === 'black-market') {
       const newId = `${id}-${nodeCounter}`;
       setNodeCounter(prev => prev + 1);
       
       const nodeTypes = {
+        'pc-case': { type: 'pc', position: { x: 240 + Math.random() * 180, y: 120 + Math.random() * 180 }, cpu: null, gpu: null, ram: [null, null, null, null], cooling: null, os: null, cpuOC: 0, gpuOC: 0, ramOC: 0, isOverheated: false, currentTemp: 25 },
         'power-strip': { type: 'power-strip', position: { x: 50 + Math.random() * 100, y: 200 + Math.random() * 100 } },
         'miner': { type: 'miner', position: { x: 300 + Math.random() * 100, y: 250 + Math.random() * 100 } },
         'interface-hub': { type: 'interface-hub', position: { x: 500 + Math.random() * 100, y: 150 + Math.random() * 100 } },
@@ -2341,7 +2392,7 @@ export default function MiningGame() {
         setNodes(prev => ({ ...prev, [newId]: nodeTypes[id] }));
       }
     } else {
-      setInventory(prev => ({ ...prev, [id]: true }));
+      setInventory(prev => ({ ...prev, [id]: (prev[id] || 0) + 1 }));
     }
   };
 
@@ -2680,6 +2731,7 @@ export default function MiningGame() {
                   <div>
                     <div className="text-purple-500 mb-1 text-xs">📦 Nodes</div>
                     <div className="space-y-1">
+                      <ShopItem id="pc-case" type="node" name="PC Case" specs="Empty 4-slot rig" price={350} owned={false} onBuy={handleShopBuy} alwaysBuyable />
                       <ShopItem id="power-strip" type="node" name="Power Strip" specs="4-way" price={25} owned={false} onBuy={handleShopBuy} alwaysBuyable />
                       <ShopItem id="miner" type="node" name="aSIC B1 Miner" specs={`${(MINER_BASE_UGS / 60).toFixed(3)}/s`} price={100} owned={false} onBuy={handleShopBuy} alwaysBuyable />
                       <ShopItem id="interface-hub" type="node" name="Interface Hub" specs="4 inputs" price={40} owned={false} onBuy={handleShopBuy} alwaysBuyable />
@@ -2691,11 +2743,11 @@ export default function MiningGame() {
                   <div>
                     <div className="text-green-500 mb-1 text-xs">💻 Programs</div>
                     <div className="space-y-1">
-                      <ShopItem id="cpuburner" type="program" name="CPUBurner" specs="OC CPU 4GB" price={75} owned={false} onBuy={handleShopBuy} alwaysBuyable />
-                      <ShopItem id="gpuburner" type="program" name="GPUBurner" specs="OC GPU 4GB" price={100} owned={false} onBuy={handleShopBuy} alwaysBuyable />
-                      <ShopItem id="ramburner" type="program" name="RAMBurner" specs="OC RAM 2GB" price={50} owned={false} onBuy={handleShopBuy} alwaysBuyable />
-                      <ShopItem id="bitwatcher" type="program" name="BitWatcher" specs="Progress 8GB" price={60} owned={false} onBuy={handleShopBuy} alwaysBuyable />
-                      <ShopItem id="uhrome" type="program" name="Uhrome" specs="Browser 6GB" price={0} owned={false} onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="cpuburner" type="program" name="CPUBurner" specs="OC CPU 4GB" price={getProgramPrice('cpuburner', 75)} owned={!!programUnlocks['cpuburner']} onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="gpuburner" type="program" name="GPUBurner" specs="OC GPU 4GB" price={getProgramPrice('gpuburner', 100)} owned={!!programUnlocks['gpuburner']} onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="ramburner" type="program" name="RAMBurner" specs="OC RAM 2GB" price={getProgramPrice('ramburner', 50)} owned={!!programUnlocks['ramburner']} onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="bitwatcher" type="program" name="BitWatcher" specs="Progress 8GB" price={getProgramPrice('bitwatcher', 60)} owned={!!programUnlocks['bitwatcher']} onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="uhrome" type="program" name="Uhrome" specs="Browser 6GB" price={getProgramPrice('uhrome', 0)} owned={!!programUnlocks['uhrome']} onBuy={handleShopBuy} alwaysBuyable />
                     </div>
                   </div>
 
@@ -2703,9 +2755,9 @@ export default function MiningGame() {
                   <div>
                     <div className="text-red-500 mb-1 text-xs">☠ Black Market</div>
                     <div className="space-y-1">
-                      <ShopItem id="black-market" type="black-market" name="Black Market" specs="qCoin Exchange 12GB" price={300} owned={false} onBuy={handleShopBuy} alwaysBuyable currency="qcoin" />
-                      <ShopItem id="variety-exe" type="black-market" name="Variety.exe" specs="Tumbler 0.5 qC/s" price={100} owned={false} onBuy={handleShopBuy} alwaysBuyable />
-                      <ShopItem id="rrtumblr" type="black-market" name="RRtumblr.exe" specs="qC -> UC (30% fee)" price={80} owned={false} onBuy={handleShopBuy} alwaysBuyable currency="qcoin" />
+                      <ShopItem id="black-market" type="black-market" name="Black Market" specs="qCoin Exchange 12GB" price={getProgramPrice('black-market', 300)} owned={!!programUnlocks['black-market']} onBuy={handleShopBuy} alwaysBuyable currency="qcoin" />
+                      <ShopItem id="variety-exe" type="black-market" name="Variety.exe" specs="Tumbler 0.5 qC/s" price={getProgramPrice('variety-exe', 100)} owned={!!programUnlocks['variety-exe']} onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="rrtumblr" type="black-market" name="RRtumblr.exe" specs="qC -> UC (30% fee)" price={getProgramPrice('rrtumblr', 80)} owned={!!programUnlocks['rrtumblr']} onBuy={handleShopBuy} alwaysBuyable currency="qcoin" />
                     </div>
                     <div className="text-[10px] text-red-700 mt-1">Run hostile ops for qCoin. RRtumblr.exe converts qCoin back to UnitCoin with a 30% burn.</div>
                   </div>
@@ -2714,10 +2766,10 @@ export default function MiningGame() {
                   <div>
                     <div className="text-cyan-500 mb-1 text-xs">❄️ Cooling</div>
                     <div className="space-y-1">
-                      <ShopItem id="fan-1" type="cooling" name="OnlyFans Case" specs="-8°C" price={30} owned={inventory['fan-1']} onBuy={handleShopBuy} />
-                      <ShopItem id="fan-2" type="cooling" name="OnlyFans Duo" specs="-15°C" price={75} owned={inventory['fan-2']} onBuy={handleShopBuy} />
-                      <ShopItem id="aio" type="cooling" name="OnlyAIO Radiator" specs="-25°C" price={200} owned={inventory['aio']} onBuy={handleShopBuy} />
-                      <ShopItem id="loop" type="cooling" name="gUNIT Tundra" specs="-40°C" price={500} owned={inventory['loop']} onBuy={handleShopBuy} />
+                      <ShopItem id="fan-1" type="cooling" name="OnlyFans Case" specs="-8°C" price={30} quantity={inventory['fan-1'] || 0} draggableItem onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="fan-2" type="cooling" name="OnlyFans Duo" specs="-15°C" price={75} quantity={inventory['fan-2'] || 0} draggableItem onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="aio" type="cooling" name="OnlyAIO Radiator" specs="-25°C" price={200} quantity={inventory['aio'] || 0} draggableItem onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="loop" type="cooling" name="gUNIT Tundra" specs="-40°C" price={500} quantity={inventory['loop'] || 0} draggableItem onBuy={handleShopBuy} alwaysBuyable />
                     </div>
                   </div>
 
@@ -2725,10 +2777,10 @@ export default function MiningGame() {
                   <div>
                     <div className="text-cyan-600 mb-1 text-xs">CPUs</div>
                     <div className="space-y-1">
-                      <ShopItem id="cpu-1" type="cpu" name="Qnit 1000" specs="1-Core 65W" price={0} owned={inventory['cpu-1']} onBuy={handleShopBuy} />
-                      <ShopItem id="cpu-2" type="cpu" name="Qnit 2000" specs="2-Core 95W" price={150} owned={inventory['cpu-2']} onBuy={handleShopBuy} />
-                      <ShopItem id="cpu-3" type="cpu" name="Qnit 3000" specs="3-Core 110W" price={300} owned={inventory['cpu-3']} onBuy={handleShopBuy} />
-                      <ShopItem id="cpu-4" type="cpu" name="Qnit 4000" specs="4-Core 125W" price={500} owned={inventory['cpu-4']} onBuy={handleShopBuy} />
+                      <ShopItem id="cpu-1" type="cpu" name="Qnit 1000" specs="1-Core 65W" price={0} quantity={inventory['cpu-1'] || 0} draggableItem onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="cpu-2" type="cpu" name="Qnit 2000" specs="2-Core 95W" price={150} quantity={inventory['cpu-2'] || 0} draggableItem onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="cpu-3" type="cpu" name="Qnit 3000" specs="3-Core 110W" price={300} quantity={inventory['cpu-3'] || 0} draggableItem onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="cpu-4" type="cpu" name="Qnit 4000" specs="4-Core 125W" price={500} quantity={inventory['cpu-4'] || 0} draggableItem onBuy={handleShopBuy} alwaysBuyable />
                     </div>
                   </div>
 
@@ -2736,11 +2788,11 @@ export default function MiningGame() {
                   <div>
                     <div className="text-orange-600 mb-1 text-xs">GPUs</div>
                     <div className="space-y-1">
-                      <ShopItem id="gpu-8" type="gpu" name="nWOLF 550" specs="8GB 75W" price={0} owned={inventory['gpu-8']} onBuy={handleShopBuy} />
-                      <ShopItem id="gpu-10" type="gpu" name="nWOLF 550ti" specs="10GB 95W" price={150} owned={inventory['gpu-10']} onBuy={handleShopBuy} />
-                      <ShopItem id="gpu-12" type="gpu" name="nWOLF 1010" specs="12GB 150W" price={350} owned={inventory['gpu-12']} onBuy={handleShopBuy} />
-                      <ShopItem id="gpu-14" type="gpu" name="nWOLF 1010ti" specs="14GB 200W" price={600} owned={inventory['gpu-14']} onBuy={handleShopBuy} />
-                      <ShopItem id="gpu-24" type="gpu" name="nWOLF Quantum" specs="24GB 320W" price={1200} owned={inventory['gpu-24']} onBuy={handleShopBuy} />
+                      <ShopItem id="gpu-8" type="gpu" name="nWOLF 550" specs="8GB 75W" price={0} quantity={inventory['gpu-8'] || 0} draggableItem onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="gpu-10" type="gpu" name="nWOLF 550ti" specs="10GB 95W" price={150} quantity={inventory['gpu-10'] || 0} draggableItem onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="gpu-12" type="gpu" name="nWOLF 1010" specs="12GB 150W" price={350} quantity={inventory['gpu-12'] || 0} draggableItem onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="gpu-14" type="gpu" name="nWOLF 1010ti" specs="14GB 200W" price={600} quantity={inventory['gpu-14'] || 0} draggableItem onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="gpu-24" type="gpu" name="nWOLF Quantum" specs="24GB 320W" price={1200} quantity={inventory['gpu-24'] || 0} draggableItem onBuy={handleShopBuy} alwaysBuyable />
                     </div>
                   </div>
 
@@ -2748,9 +2800,9 @@ export default function MiningGame() {
                   <div>
                     <div className="text-purple-600 mb-1 text-xs">RAM DDR4</div>
                     <div className="space-y-1">
-                      <ShopItem id="ram-8" type="ram" name="aDEP 8GB DDR4" specs="3200MHz" price={0} owned={inventory['ram-8']} onBuy={handleShopBuy} />
-                      <ShopItem id="ram-16" type="ram" name="aDEP 16GB DDR4" specs="3600MHz" price={80} owned={inventory['ram-16']} onBuy={handleShopBuy} />
-                      <ShopItem id="ram-32" type="ram" name="aDEP 32GB DDR4" specs="3600MHz" price={200} owned={inventory['ram-32']} onBuy={handleShopBuy} />
+                      <ShopItem id="ram-8" type="ram" name="aDEP 8GB DDR4" specs="3200MHz" price={0} quantity={inventory['ram-8'] || 0} draggableItem onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="ram-16" type="ram" name="aDEP 16GB DDR4" specs="3600MHz" price={80} quantity={inventory['ram-16'] || 0} draggableItem onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="ram-32" type="ram" name="aDEP 32GB DDR4" specs="3600MHz" price={200} quantity={inventory['ram-32'] || 0} draggableItem onBuy={handleShopBuy} alwaysBuyable />
                     </div>
                   </div>
 
@@ -2758,9 +2810,9 @@ export default function MiningGame() {
                   <div>
                     <div className="text-pink-500 mb-1 text-xs">RAM DDR5 ⚡</div>
                     <div className="space-y-1">
-                      <ShopItem id="ram-8-p" type="ram" name="aDEP 8GB PERF" specs="DDR5 +15% UGS" price={60} owned={inventory['ram-8-p']} onBuy={handleShopBuy} />
-                      <ShopItem id="ram-16-p" type="ram" name="aDEP 16GB PERF" specs="DDR5 +20% UGS" price={150} owned={inventory['ram-16-p']} onBuy={handleShopBuy} />
-                      <ShopItem id="ram-32-p" type="ram" name="aDEP 32GB PERF" specs="DDR5 +25% UGS" price={350} owned={inventory['ram-32-p']} onBuy={handleShopBuy} />
+                      <ShopItem id="ram-8-p" type="ram" name="aDEP 8GB PERF" specs="DDR5 +15% UGS" price={60} quantity={inventory['ram-8-p'] || 0} draggableItem onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="ram-16-p" type="ram" name="aDEP 16GB PERF" specs="DDR5 +20% UGS" price={150} quantity={inventory['ram-16-p'] || 0} draggableItem onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="ram-32-p" type="ram" name="aDEP 32GB PERF" specs="DDR5 +25% UGS" price={350} quantity={inventory['ram-32-p'] || 0} draggableItem onBuy={handleShopBuy} alwaysBuyable />
                     </div>
                   </div>
 
@@ -2768,10 +2820,10 @@ export default function MiningGame() {
                   <div>
                     <div className="text-green-600 mb-1 text-xs">OS (Program Slots)</div>
                     <div className="space-y-1">
-                      <ShopItem id="trader-os" type="os" name="TraderOS v1" specs="1 slot" price={0} owned={inventory['trader-os']} onBuy={handleShopBuy} />
-                      <ShopItem id="trader-os-2" type="os" name="TraderOS v2" specs="2 slots 16GB" price={200} owned={inventory['trader-os-2']} onBuy={handleShopBuy} />
-                      <ShopItem id="miner-os" type="os" name="MinerOS Pro" specs="3 slots 32GB" price={500} owned={inventory['miner-os']} onBuy={handleShopBuy} />
-                      <ShopItem id="miner-os-2" type="os" name="MinerOS Ultra" specs="4 slots 64GB" price={1200} owned={inventory['miner-os-2']} onBuy={handleShopBuy} />
+                      <ShopItem id="trader-os" type="os" name="TraderOS v1" specs="1 slot" price={0} quantity={inventory['trader-os'] || 0} draggableItem onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="trader-os-2" type="os" name="TraderOS v2" specs="2 slots 16GB" price={200} quantity={inventory['trader-os-2'] || 0} draggableItem onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="miner-os" type="os" name="MinerOS Pro" specs="3 slots 32GB" price={500} quantity={inventory['miner-os'] || 0} draggableItem onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="miner-os-2" type="os" name="MinerOS Ultra" specs="4 slots 64GB" price={1200} quantity={inventory['miner-os-2'] || 0} draggableItem onBuy={handleShopBuy} alwaysBuyable />
                     </div>
                   </div>
                 </div>
