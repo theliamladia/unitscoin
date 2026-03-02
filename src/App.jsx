@@ -159,16 +159,16 @@ const Connector = ({ direction, color, connected, nodeId, connectorId, onStartCo
       className="connector"
       onMouseDown={(e) => { e.stopPropagation(); if (direction === 'output' && !connected) onStartConnection(nodeId, connectorId, color); }}
       onMouseUp={(e) => { e.stopPropagation(); if (direction === 'input') onEndConnection(nodeId, connectorId); }}
-      onClick={(e) => { e.stopPropagation(); if (direction === 'input' && connected && onDisconnect) onDisconnect(nodeId, connectorId); }}
+      onClick={(e) => { e.stopPropagation(); if (connected && onDisconnect) onDisconnect(nodeId, connectorId); }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      title={direction === 'input' && connected ? 'Click to disconnect' : ''}
+      title={connected && onDisconnect ? 'Click to disconnect' : ''}
       style={{
         width: '14px', height: '14px', borderRadius: '50%',
         background: connected ? color : `${color}40`,
         border: `2px solid ${color}`,
         boxShadow: connected || isHovered ? `0 0 10px ${color}` : 'none',
-        cursor: direction === 'input' && connected ? 'pointer' : 'crosshair',
+        cursor: connected && onDisconnect ? 'pointer' : 'crosshair',
         transition: 'all 0.2s ease',
         transform: isHovered ? 'scale(1.2)' : 'scale(1)',
       }}
@@ -258,7 +258,7 @@ const DraggableNode = ({ id, position, onPositionChange, children, scale = 1 }) 
 };
 
 // Power Grid
-const PowerGridNode = ({ connected, totalWattage, onStartConnection, onEndConnection }) => (
+const PowerGridNode = ({ connected, totalWattage, onStartConnection, onEndConnection, onDisconnect }) => (
   <div style={{ background: 'linear-gradient(135deg, rgba(40,35,20,0.95), rgba(25,22,12,0.98))', border: '2px solid #ffcc00', borderRadius: '10px', padding: '12px', minWidth: '160px', boxShadow: '0 0 20px rgba(255,204,0,0.3)' }}>
     <div className="flex items-center gap-2 mb-2">
       <span className="text-xl">⚡</span>
@@ -269,7 +269,7 @@ const PowerGridNode = ({ connected, totalWattage, onStartConnection, onEndConnec
     </div>
     <div className="flex items-center justify-between pt-2 border-t border-yellow-900">
       <span className="text-yellow-600 text-xs">Out</span>
-      <Connector direction="output" color="#ffcc00" connected={connected} nodeId="power-grid" connectorId="power-out" onStartConnection={onStartConnection} onEndConnection={onEndConnection} />
+      <Connector direction="output" color="#ffcc00" connected={connected} nodeId="power-grid" connectorId="power-out" onStartConnection={onStartConnection} onEndConnection={onEndConnection} onDisconnect={onDisconnect} />
     </div>
   </div>
 );
@@ -2067,7 +2067,6 @@ export default function MiningGame() {
         const updated = { ...prev };
         let totalUGS = 0;
         let transformerFees = 0;
-        let tumblerQCoin = 0;
         
         Object.entries(updated).forEach(([id, node]) => {
           if (node.type === 'pc') {
@@ -2099,27 +2098,14 @@ export default function MiningGame() {
             totalUGS += MINER_BASE_UGS;
           } else if (node.type === 'transformer' && hasPower(id)) {
             transformerFees += TRANSFORMERS[node.transformerType].tickFee;
-          } else if (node.type === 'program' && node.programType === 'variety-exe') {
-            const conn = connections.find(c => c.to === `${id}:program-in`);
-            if (!conn) return;
-            const [pcId] = conn.from.split(':');
-            const pcNode = updated[pcId];
-            if (!pcNode || pcNode.type !== 'pc') return;
-
-            const feedUC = node.feedUC || 0;
-            if (feedUC <= 0) return;
-            const convert = Math.min(feedUC, 0.5 * tickSeconds);
-            tumblerQCoin += convert;
-            updated[id] = { ...node, feedUC: feedUC - convert };
           }
         });
 
-        if (totalUGS > 0 || transformerFees > 0 || tumblerQCoin > 0) {
+        if (totalUGS > 0 || transformerFees > 0) {
           setGameState(prevState => ({
             ...prevState,
             // totalUGS is per-minute throughput; convert to this tick's increment.
             unitCoin: prevState.unitCoin + (totalUGS * (TICK_MS / 60000)),
-            qCoin: prevState.qCoin + tumblerQCoin,
             money: Math.max(0, prevState.money - (transformerFees * tickSeconds)),
           }));
         }
@@ -2129,6 +2115,44 @@ export default function MiningGame() {
     }, TICK_MS);
     return () => clearInterval(interval);
   }, [hasPower, connections]);
+
+  // Dedicated Variety.exe conversion tick (qCoin generation).
+  // Runs separately from mining power logic so qCoin conversion stays reliable.
+  useEffect(() => {
+    const tickSeconds = TICK_MS / 1000;
+    const interval = setInterval(() => {
+      setNodes(prev => {
+        const updated = { ...prev };
+        let convertedQCoin = 0;
+
+        Object.entries(updated).forEach(([id, node]) => {
+          if (node.type !== 'program' || node.programType !== 'variety-exe') return;
+          const conn = connections.find(c => c.to === `${id}:program-in`);
+          if (!conn) return;
+          const [pcId] = conn.from.split(':');
+          const pcNode = updated[pcId];
+          if (!pcNode || pcNode.type !== 'pc') return;
+
+          const feedUC = node.feedUC || 0;
+          if (feedUC <= 0) return;
+
+          const convert = Math.min(feedUC, 0.5 * tickSeconds);
+          if (convert <= 0) return;
+
+          convertedQCoin += convert;
+          updated[id] = { ...node, feedUC: feedUC - convert };
+        });
+
+        if (convertedQCoin > 0) {
+          setGameState(prevState => ({ ...prevState, qCoin: prevState.qCoin + convertedQCoin }));
+        }
+
+        return updated;
+      });
+    }, TICK_MS);
+
+    return () => clearInterval(interval);
+  }, [connections]);
 
   // Mouse tracking
   useEffect(() => {
