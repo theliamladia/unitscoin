@@ -1907,12 +1907,11 @@ export default function MiningGame() {
   useEffect(() => {
     const tickSeconds = TICK_MS / 1000;
     const interval = setInterval(() => {
-      let totalUGS = 0;
-      let transformerFees = 0;
-      let tumblerQCoin = 0;
-
       setNodes(prev => {
         const updated = { ...prev };
+        let totalUGS = 0;
+        let transformerFees = 0;
+        let tumblerQCoin = 0;
         
         Object.entries(updated).forEach(([id, node]) => {
           if (node.type === 'pc') {
@@ -1960,18 +1959,18 @@ export default function MiningGame() {
           }
         });
 
+        if (totalUGS > 0 || transformerFees > 0 || tumblerQCoin > 0) {
+          setGameState(prevState => ({
+            ...prevState,
+            // totalUGS is per-minute throughput; convert to this tick's increment.
+            unitCoin: prevState.unitCoin + (totalUGS * (TICK_MS / 60000)),
+            qCoin: prevState.qCoin + tumblerQCoin,
+            money: Math.max(0, prevState.money - (transformerFees * tickSeconds)),
+          }));
+        }
+
         return updated;
       });
-
-      if (totalUGS > 0 || transformerFees > 0 || tumblerQCoin > 0) {
-        setGameState(prev => ({
-          ...prev,
-          // totalUGS is per-minute throughput; convert to this tick's increment.
-          unitCoin: prev.unitCoin + (totalUGS * (TICK_MS / 60000)),
-          qCoin: prev.qCoin + tumblerQCoin,
-          money: Math.max(0, prev.money - (transformerFees * tickSeconds)),
-        }));
-      }
     }, TICK_MS);
     return () => clearInterval(interval);
   }, [hasPower, connections]);
