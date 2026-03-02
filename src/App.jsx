@@ -2065,7 +2065,6 @@ export default function MiningGame() {
     const interval = setInterval(() => {
       setNodes(prev => {
         const updated = { ...prev };
-        let totalUGS = 0;
         let transformerFees = 0;
         
         Object.entries(updated).forEach(([id, node]) => {
@@ -2089,23 +2088,15 @@ export default function MiningGame() {
               ramOC = 0;
             }
 
-            if (powered && !isOverheated) {
-              totalUGS += calculateUGS(node.cpu, node.gpu, node.ram, cpuOC, gpuOC, ramOC);
-            }
-
             updated[id] = { ...node, currentTemp: Math.round(newTemp), isOverheated, cpuOC, gpuOC, ramOC };
-          } else if (node.type === 'miner' && hasPower(id)) {
-            totalUGS += MINER_BASE_UGS;
           } else if (node.type === 'transformer' && hasPower(id)) {
             transformerFees += TRANSFORMERS[node.transformerType].tickFee;
           }
         });
 
-        if (totalUGS > 0 || transformerFees > 0) {
+        if (transformerFees > 0) {
           setGameState(prevState => ({
             ...prevState,
-            // totalUGS is per-minute throughput; convert to this tick's increment.
-            unitCoin: prevState.unitCoin + (totalUGS * (TICK_MS / 60000)),
             money: Math.max(0, prevState.money - (transformerFees * tickSeconds)),
           }));
         }
@@ -2124,6 +2115,7 @@ export default function MiningGame() {
       setNodes(prev => {
         const updated = { ...prev };
         let convertedQCoin = 0;
+        let didUpdate = false;
 
         Object.entries(updated).forEach(([id, node]) => {
           if (node.type !== 'program' || node.programType !== 'variety-exe') return;
@@ -2141,13 +2133,14 @@ export default function MiningGame() {
 
           convertedQCoin += convert;
           updated[id] = { ...node, feedUC: feedUC - convert };
+          didUpdate = true;
         });
 
         if (convertedQCoin > 0) {
           setGameState(prevState => ({ ...prevState, qCoin: prevState.qCoin + convertedQCoin }));
         }
 
-        return updated;
+        return didUpdate ? updated : prev;
       });
     }, TICK_MS);
 
@@ -2493,6 +2486,18 @@ export default function MiningGame() {
     if (node.type === 'miner' && hasPower(id)) return sum + MINER_BASE_UGS;
     return sum;
   }, 0);
+
+  // Stable UnitCoin accrual tick from live UGS.
+  useEffect(() => {
+    if (totalUGS <= 0) return;
+    const interval = setInterval(() => {
+      setGameState(prev => ({
+        ...prev,
+        unitCoin: prev.unitCoin + (totalUGS * (TICK_MS / 60000)),
+      }));
+    }, TICK_MS);
+    return () => clearInterval(interval);
+  }, [totalUGS]);
 
   return (
     <div className="min-h-screen p-3" style={{ background: 'linear-gradient(135deg, #080b12, #0d1220)' }}>
