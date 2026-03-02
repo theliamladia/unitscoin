@@ -1974,7 +1974,7 @@ export default function MiningGame() {
       }
     }, TICK_MS);
     return () => clearInterval(interval);
-  }, [hasPower]);
+  }, [hasPower, connections]);
 
   // Mouse tracking
   useEffect(() => {
