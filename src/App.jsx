@@ -325,7 +325,7 @@ const PowerStripNode = ({ id, powerConnected, outputs, onStartConnection, onEndC
 );
 
 // PC Node
-const PCNode = ({ id, cpu, gpu, ram, cooling, os, powerConnected, displayConnected, programConnections, cpuOC, gpuOC, ramOC, isOverheated, currentTemp, onSlotDrop, onStartConnection, onEndConnection, onDisconnect }) => {
+const PCNode = ({ id, cpu, gpu, ram, cooling, os, powerConnected, powerInputLinked, displayConnected, programConnections, cpuOC, gpuOC, ramOC, isOverheated, currentTemp, onSlotDrop, onStartConnection, onEndConnection, onDisconnect }) => {
   const powerDraw = calculatePowerDraw(cpu, gpu, ram, cooling, cpuOC, gpuOC, ramOC);
   const ugs = calculateUGS(cpu, gpu, ram, cpuOC, gpuOC, ramOC);
   const tempColor = getTempColor(currentTemp);
@@ -342,12 +342,12 @@ const PCNode = ({ id, cpu, gpu, ram, cooling, os, powerConnected, displayConnect
     <div 
       style={{ 
         background: isOverheated ? 'linear-gradient(135deg, rgba(60,20,20,0.95), rgba(40,15,15,0.98))' : 'linear-gradient(135deg, rgba(25,30,45,0.95), rgba(15,20,30,0.98))', 
-        border: `2px solid ${isOverheated ? '#ef4444' : powerConnected ? '#00ff88' : '#333'}`, 
+        border: `2px solid ${isOverheated ? '#ef4444' : powerConnected ? '#00ff88' : powerInputLinked ? '#f59e0b' : '#333'}`, 
         borderRadius: '10px', padding: '12px', minWidth: '260px',
         boxShadow: isOverheated ? '0 0 30px rgba(239,68,68,0.4)' : powerConnected ? '0 0 25px rgba(0,255,136,0.15)' : 'none',
         animation: isOverheated ? 'pulse-red 1s infinite' : 'none',
       }}
-      title={isOverheated ? 'PC Overheated! Wait for it to cool down. Overclock settings cleared.' : ''}
+      title={isOverheated ? 'PC Overheated! Wait for it to cool down. Overclock settings cleared.' : (!powerConnected && powerInputLinked ? 'Connected but insufficient power. Use a battery transformer.' : '')}
     >
       <style>{`@keyframes pulse-red { 0%, 100% { box-shadow: 0 0 30px rgba(239,68,68,0.4); } 50% { box-shadow: 0 0 50px rgba(239,68,68,0.6); } }`}</style>
       
@@ -356,8 +356,8 @@ const PCNode = ({ id, cpu, gpu, ram, cooling, os, powerConnected, displayConnect
           <span className="text-lg">{isOverheated ? '⚠️' : '🖥️'}</span>
           <div>
             <div className="text-white font-bold text-xs">Gaming PC</div>
-            <div className={`text-xs ${isOverheated ? 'text-red-400' : powerConnected ? 'text-green-400' : 'text-gray-500'}`}>
-              {isOverheated ? '🔥 OVERHEATED' : powerConnected ? '● ON' : '○ OFF'}
+            <div className={`text-xs ${isOverheated ? 'text-red-400' : powerConnected ? 'text-green-400' : powerInputLinked ? 'text-amber-400' : 'text-gray-500'}`}>
+              {isOverheated ? '🔥 OVERHEATED' : powerConnected ? '● ON' : powerInputLinked ? '○ LOW POWER' : '○ OFF'}
             </div>
           </div>
         </div>
@@ -2244,7 +2244,8 @@ export default function MiningGame() {
   };
 
   const handleDisconnect = (nodeId, connectorId) => {
-    setConnections(prev => prev.filter(c => c.to !== `${nodeId}:${connectorId}`));
+    const endpoint = `${nodeId}:${connectorId}`;
+    setConnections(prev => prev.filter(c => c.to !== endpoint && c.from !== endpoint));
   };
 
   const handleSlotDrop = (nodeId, type, id, index) => {
@@ -2591,7 +2592,7 @@ export default function MiningGame() {
 
               {Object.entries(nodes).map(([id, node]) => (
                 <DraggableNode key={id} id={id} position={node.position} onPositionChange={handlePositionChange} scale={scale}>
-                  {node.type === 'power-grid' && <PowerGridNode connected={connections.some(c => c.from === `${id}:power-out`)} totalWattage={totalWattage} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} />}
+                  {node.type === 'power-grid' && <PowerGridNode connected={connections.some(c => c.from === `${id}:power-out`)} totalWattage={totalWattage} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />}
                   {node.type === 'transformer' && (
                     <div className="relative group">
                       <TransformerNode id={id} type={node.transformerType} powerConnected={hasPower(id)} outputConnected={connections.some(c => c.from === `${id}:power-out`)} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />
@@ -2604,7 +2605,7 @@ export default function MiningGame() {
                       <button onClick={() => handleDeleteNode(id)} className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-600 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Delete">✕</button>
                     </div>
                   )}
-                  {node.type === 'pc' && <PCNode id={id} cpu={node.cpu} gpu={node.gpu} ram={node.ram} cooling={node.cooling} os={node.os} powerConnected={hasPower(id)} displayConnected={hasDisplay(id)} programConnections={[0,1,2,3].map(i => connections.some(c => c.from === `${id}:program-out-${i}`))} cpuOC={node.cpuOC || 0} gpuOC={node.gpuOC || 0} ramOC={node.ramOC || 0} isOverheated={node.isOverheated} currentTemp={node.currentTemp} onSlotDrop={(type, itemId, index) => handleSlotDrop(id, type, itemId, index)} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />}
+                  {node.type === 'pc' && <PCNode id={id} cpu={node.cpu} gpu={node.gpu} ram={node.ram} cooling={node.cooling} os={node.os} powerConnected={hasPower(id)} powerInputLinked={connections.some(c => c.to === `${id}:power-in`)} displayConnected={hasDisplay(id)} programConnections={[0,1,2,3].map(i => connections.some(c => c.from === `${id}:program-out-${i}`))} cpuOC={node.cpuOC || 0} gpuOC={node.gpuOC || 0} ramOC={node.ramOC || 0} isOverheated={node.isOverheated} currentTemp={node.currentTemp} onSlotDrop={(type, itemId, index) => handleSlotDrop(id, type, itemId, index)} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />}
                   {node.type === 'miner' && (
                     <div className="relative group">
                       <MinerNode id={id} powerConnected={hasPower(id)} displayConnected={hasDisplay(id)} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />
