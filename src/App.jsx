@@ -65,6 +65,7 @@ const COMPONENTS = {
     'bitwatcher': { name: 'BitWatcher', description: 'Mining Progress Visualizer', price: 60, target: 'display', ramReq: 8 },
     'uhrome': { name: 'Uhrome Browser', description: 'Web Browser', price: 0, target: 'browser', ramReq: 6 },
     'black-market': { name: 'Black Market', description: 'Underground qCoin Exchange', price: 300, target: 'blackmarket', ramReq: 12 },
+    'variety-exe': { name: 'Variety.exe', description: 'UnitCoin to qCoin Tumbler', price: 100, target: 'tumbler', ramReq: 8 },
   },
 };
 
@@ -983,15 +984,16 @@ const UhromeBrowser = ({ id, pcConnected, miningProgress, onBetUnitCoin, onSpend
 };
 
 // Program Node (Burners, BitWatcher, and Uhrome Browser)
-const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCoin, onSetOverclock, onBetUnitCoin, onSpendMoney, onStartConnection, onEndConnection, onDisconnect }) => {
+const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCoin, tumblerFeed = 0, onSetOverclock, onFeedToTumbler, onBetUnitCoin, onSpendMoney, onStartConnection, onEndConnection, onDisconnect }) => {
   const [terminalHistory, setTerminalHistory] = useState([]);
   const [inputValue, setInputValue] = useState('');
+  const [feedAmount, setFeedAmount] = useState('1');
   const terminalRef = useRef(null);
   const program = COMPONENTS.program[type];
-  const target = program?.target; // 'cpu', 'gpu', 'ram', 'display', 'browser', or 'blackmarket'
+  const target = program?.target; // 'cpu', 'gpu', 'ram', 'display', 'browser', 'blackmarket', or 'tumbler'
 
   useEffect(() => {
-    if (target && target !== 'display' && target !== 'browser' && target !== 'blackmarket') {
+    if (target && target !== 'display' && target !== 'browser' && target !== 'blackmarket' && target !== 'tumbler') {
       setTerminalHistory([
         { type: 'system', text: `${program?.name} v1.0 initialized` },
         { type: 'system', text: 'Type "oc help" for commands' }
@@ -1252,6 +1254,63 @@ const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCo
     );
   }
 
+  if (target === 'tumbler') {
+    const parsedFeed = parseFloat(feedAmount) || 0;
+    return (
+      <div style={{ background: 'linear-gradient(135deg, rgba(32,8,8,0.96), rgba(12,4,4,0.98))', border: `2px solid ${pcConnected ? '#ef4444' : '#333'}`, borderRadius: '10px', padding: '12px', minWidth: '300px', boxShadow: pcConnected ? '0 0 20px rgba(239,68,68,0.2)' : 'none' }}>
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">🧪</span>
+            <div>
+              <div className="text-red-400 font-bold text-xs">{program.name}</div>
+              <div className={`text-xs ${pcConnected ? 'text-red-500' : 'text-gray-500'}`}>{pcConnected ? '● ACTIVE LINK' : '○ NO PC'}</div>
+            </div>
+          </div>
+          <div className="text-xs text-red-300 font-mono">0.5 qC/s</div>
+        </div>
+
+        <div className="flex items-center gap-2 mb-2 p-1.5 rounded bg-black/50 border border-red-900/40">
+          <Connector direction="input" color="#a855f7" connected={pcConnected} nodeId={id} connectorId="program-in" onStartConnection={onStartConnection} onEndConnection={onEndConnection} onDisconnect={onDisconnect} />
+          <span className="text-purple-300 text-xs">PC IN</span>
+        </div>
+
+        <div className="p-2 rounded bg-black/40 border border-red-900/40">
+          <div className="flex justify-between text-xs mb-1">
+            <span className="text-gray-400">Buffered UC</span>
+            <span className="text-yellow-300 font-mono">{tumblerFeed.toFixed(3)}</span>
+          </div>
+          <div className="flex justify-between text-xs mb-2">
+            <span className="text-gray-400">qCoin Balance</span>
+            <span className="text-red-300 font-mono">{(qCoin || 0).toFixed(4)}</span>
+          </div>
+          <div className="flex gap-1">
+            <input
+              type="text"
+              value={feedAmount}
+              onChange={(e) => setFeedAmount(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              className="flex-1 px-2 py-1 rounded bg-black border border-red-900 text-yellow-300 text-xs text-center font-mono"
+              placeholder="UC amount"
+            />
+            <button
+              onClick={() => onFeedToTumbler(id, parsedFeed)}
+              disabled={!pcConnected || parsedFeed <= 0 || miningProgress < parsedFeed}
+              className="px-2 py-1 rounded text-xs font-bold"
+              style={{
+                background: pcConnected && parsedFeed > 0 && miningProgress >= parsedFeed ? '#7f1d1d' : '#1f2937',
+                color: pcConnected && parsedFeed > 0 && miningProgress >= parsedFeed ? '#fecaca' : '#6b7280',
+                cursor: pcConnected && parsedFeed > 0 && miningProgress >= parsedFeed ? 'pointer' : 'not-allowed'
+              }}
+            >
+              FEED
+            </button>
+          </div>
+          <div className="text-[10px] text-red-500 mt-2">Converts buffered UnitCoin into qCoin at roughly 0.5 per second.</div>
+        </div>
+      </div>
+    );
+  }
+
   // Burner terminal rendering
   return (
     <div style={{ background: 'linear-gradient(135deg, rgba(15,20,15,0.95), rgba(10,15,10,0.98))', border: `2px solid ${pcConnected ? borderColor : '#333'}`, borderRadius: '10px', padding: '12px', minWidth: '260px', boxShadow: pcConnected ? `0 0 20px ${borderColor}30` : 'none' }}>
@@ -1482,8 +1541,8 @@ const ConnectionLine = ({ startPos, endPos, color, isDrawing }) => {
 };
 
 // Shop Item
-const ShopItem = ({ id, type, name, specs, price, owned, onBuy, alwaysBuyable }) => {
-  const colors = { cpu: '#00d4ff', gpu: '#ff6b00', ram: '#b44aff', os: '#22c55e', node: '#a855f7', cooling: '#06b6d4', program: '#22c55e', transformer: '#ff9500' };
+const ShopItem = ({ id, type, name, specs, price, owned, onBuy, alwaysBuyable, currency = 'money' }) => {
+  const colors = { cpu: '#00d4ff', gpu: '#ff6b00', ram: '#b44aff', os: '#22c55e', node: '#a855f7', cooling: '#06b6d4', program: '#22c55e', transformer: '#ff9500', 'black-market': '#ef4444' };
   const canBuy = alwaysBuyable || !owned;
   
   return (
@@ -1495,7 +1554,14 @@ const ShopItem = ({ id, type, name, specs, price, owned, onBuy, alwaysBuyable })
     >
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium" style={{ color: colors[type] }}>{name}</span>
-        {canBuy && <button onClick={() => onBuy(id, type, price)} className="px-1.5 py-0.5 rounded text-xs bg-green-900/50 text-green-400 border border-green-800 hover:bg-green-800/50">${price}</button>}
+        {canBuy && (
+          <button
+            onClick={() => onBuy(id, type, price, currency)}
+            className={`px-1.5 py-0.5 rounded text-xs border ${currency === 'qcoin' ? 'bg-red-900/50 text-red-300 border-red-800 hover:bg-red-800/50' : 'bg-green-900/50 text-green-400 border-green-800 hover:bg-green-800/50'}`}
+          >
+            {currency === 'qcoin' ? `◈${price}` : `$${price}`}
+          </button>
+        )}
         {owned && !alwaysBuyable && <span className="text-gray-600 text-xs">⋮⋮</span>}
       </div>
       <div className="text-xs text-gray-500">{specs}</div>
@@ -1843,6 +1909,7 @@ export default function MiningGame() {
     const interval = setInterval(() => {
       let totalUGS = 0;
       let transformerFees = 0;
+      let tumblerQCoin = 0;
 
       setNodes(prev => {
         const updated = { ...prev };
@@ -1877,17 +1944,31 @@ export default function MiningGame() {
             totalUGS += MINER_BASE_UGS;
           } else if (node.type === 'transformer' && hasPower(id)) {
             transformerFees += TRANSFORMERS[node.transformerType].tickFee;
+          } else if (node.type === 'program' && node.programType === 'variety-exe') {
+            const conn = connections.find(c => c.to === `${id}:program-in`);
+            if (!conn) return;
+            const [pcId] = conn.from.split(':');
+            const pcNode = updated[pcId];
+            if (!pcNode || pcNode.type !== 'pc') return;
+            if (!hasPower(pcId) || pcNode.isOverheated) return;
+
+            const feedUC = node.feedUC || 0;
+            if (feedUC <= 0) return;
+            const convert = Math.min(feedUC, 0.5 * tickSeconds);
+            tumblerQCoin += convert;
+            updated[id] = { ...node, feedUC: feedUC - convert };
           }
         });
 
         return updated;
       });
 
-      if (totalUGS > 0 || transformerFees > 0) {
+      if (totalUGS > 0 || transformerFees > 0 || tumblerQCoin > 0) {
         setGameState(prev => ({
           ...prev,
           // totalUGS is per-minute throughput; convert to this tick's increment.
           unitCoin: prev.unitCoin + (totalUGS * (TICK_MS / 60000)),
+          qCoin: prev.qCoin + tumblerQCoin,
           money: Math.max(0, prev.money - (transformerFees * tickSeconds)),
         }));
       }
@@ -2033,35 +2114,58 @@ export default function MiningGame() {
     });
   };
 
-  const handleShopBuy = (id, type, price) => {
-    if (gameState.money >= price) {
-      setGameState(prev => ({ ...prev, money: prev.money - price }));
-      
-      if (type === 'node' || type === 'transformer' || type === 'program') {
-        const newId = `${id}-${nodeCounter}`;
-        setNodeCounter(prev => prev + 1);
-        
-        const nodeTypes = {
-          'power-strip': { type: 'power-strip', position: { x: 50 + Math.random() * 100, y: 200 + Math.random() * 100 } },
-          'miner': { type: 'miner', position: { x: 300 + Math.random() * 100, y: 250 + Math.random() * 100 } },
-          'interface-hub': { type: 'interface-hub', position: { x: 500 + Math.random() * 100, y: 150 + Math.random() * 100 } },
-          'program-rack': { type: 'program-rack', position: { x: 450 + Math.random() * 100, y: 200 + Math.random() * 100 }, slots: [null, null, null] },
-          'transformer-small': { type: 'transformer', transformerType: 'transformer-small', position: { x: 100 + Math.random() * 100, y: 150 + Math.random() * 100 } },
-          'transformer-medium': { type: 'transformer', transformerType: 'transformer-medium', position: { x: 100 + Math.random() * 100, y: 150 + Math.random() * 100 } },
-          'transformer-large': { type: 'transformer', transformerType: 'transformer-large', position: { x: 100 + Math.random() * 100, y: 150 + Math.random() * 100 } },
-          'cpuburner': { type: 'program', programType: 'cpuburner', position: { x: 400 + Math.random() * 100, y: 200 + Math.random() * 100 } },
-          'gpuburner': { type: 'program', programType: 'gpuburner', position: { x: 420 + Math.random() * 100, y: 220 + Math.random() * 100 } },
-          'ramburner': { type: 'program', programType: 'ramburner', position: { x: 440 + Math.random() * 100, y: 240 + Math.random() * 100 } },
-          'bitwatcher': { type: 'program', programType: 'bitwatcher', position: { x: 460 + Math.random() * 100, y: 260 + Math.random() * 100 } },
-          'uhrome': { type: 'program', programType: 'uhrome', position: { x: 480 + Math.random() * 100, y: 280 + Math.random() * 100 } },
-          'black-market': { type: 'program', programType: 'black-market', position: { x: 500 + Math.random() * 100, y: 300 + Math.random() * 100 } },
-        };
-        
-        setNodes(prev => ({ ...prev, [newId]: nodeTypes[id] }));
-      } else {
-        setInventory(prev => ({ ...prev, [id]: true }));
+  const handleShopBuy = (id, type, price, currency = 'money') => {
+    const canAfford = currency === 'qcoin' ? gameState.qCoin >= price : gameState.money >= price;
+    if (!canAfford) return;
+
+    setGameState(prev => {
+      if (currency === 'qcoin') {
+        if (prev.qCoin < price) return prev;
+        return { ...prev, qCoin: prev.qCoin - price };
       }
+      if (prev.money < price) return prev;
+      return { ...prev, money: prev.money - price };
+    });
+    
+    if (type === 'node' || type === 'transformer' || type === 'program' || type === 'black-market') {
+      const newId = `${id}-${nodeCounter}`;
+      setNodeCounter(prev => prev + 1);
+      
+      const nodeTypes = {
+        'power-strip': { type: 'power-strip', position: { x: 50 + Math.random() * 100, y: 200 + Math.random() * 100 } },
+        'miner': { type: 'miner', position: { x: 300 + Math.random() * 100, y: 250 + Math.random() * 100 } },
+        'interface-hub': { type: 'interface-hub', position: { x: 500 + Math.random() * 100, y: 150 + Math.random() * 100 } },
+        'program-rack': { type: 'program-rack', position: { x: 450 + Math.random() * 100, y: 200 + Math.random() * 100 }, slots: [null, null, null] },
+        'transformer-small': { type: 'transformer', transformerType: 'transformer-small', position: { x: 100 + Math.random() * 100, y: 150 + Math.random() * 100 } },
+        'transformer-medium': { type: 'transformer', transformerType: 'transformer-medium', position: { x: 100 + Math.random() * 100, y: 150 + Math.random() * 100 } },
+        'transformer-large': { type: 'transformer', transformerType: 'transformer-large', position: { x: 100 + Math.random() * 100, y: 150 + Math.random() * 100 } },
+        'cpuburner': { type: 'program', programType: 'cpuburner', position: { x: 400 + Math.random() * 100, y: 200 + Math.random() * 100 } },
+        'gpuburner': { type: 'program', programType: 'gpuburner', position: { x: 420 + Math.random() * 100, y: 220 + Math.random() * 100 } },
+        'ramburner': { type: 'program', programType: 'ramburner', position: { x: 440 + Math.random() * 100, y: 240 + Math.random() * 100 } },
+        'bitwatcher': { type: 'program', programType: 'bitwatcher', position: { x: 460 + Math.random() * 100, y: 260 + Math.random() * 100 } },
+        'uhrome': { type: 'program', programType: 'uhrome', position: { x: 480 + Math.random() * 100, y: 280 + Math.random() * 100 } },
+        'black-market': { type: 'program', programType: 'black-market', position: { x: 500 + Math.random() * 100, y: 300 + Math.random() * 100 } },
+        'variety-exe': { type: 'program', programType: 'variety-exe', feedUC: 0, position: { x: 520 + Math.random() * 100, y: 320 + Math.random() * 100 } },
+      };
+      
+      if (nodeTypes[id]) {
+        setNodes(prev => ({ ...prev, [newId]: nodeTypes[id] }));
+      }
+    } else {
+      setInventory(prev => ({ ...prev, [id]: true }));
     }
+  };
+
+  const handleFeedToTumbler = (programId, amount) => {
+    if (!amount || amount <= 0) return;
+    if (gameState.unitCoin < amount) return;
+
+    setGameState(prev => ({ ...prev, unitCoin: prev.unitCoin - amount }));
+    setNodes(prev => {
+      const node = prev[programId];
+      if (!node || node.type !== 'program' || node.programType !== 'variety-exe') return prev;
+      return { ...prev, [programId]: { ...node, feedUC: (node.feedUC || 0) + amount } };
+    });
   };
 
   const handleBuyCanvas = (level) => {
@@ -2321,7 +2425,7 @@ export default function MiningGame() {
                   {node.type === 'interface' && <InterfaceNode id={id} connected={connections.some(c => c.to === `${id}:display-in`)} pcData={getPCDataForInterface(id)} hasMinerConnected={hasMinerConnected(id)} sourceInfo={getSourceInfoForInterface(id)} onSwitchSource={handleSwitchInterfaceSource} programData={getProgramDataForInterface(id)} unitCoin={gameState.unitCoin} unitCoinPrice={gameState.unitCoinPrice} money={gameState.money} priceHistory={gameState.priceHistory} onBuy={handleBuy} onSell={handleSell} onSellAll={handleSellAll} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />}
                   {node.type === 'program' && (
                     <div className="relative group">
-                      <ProgramNode id={id} type={node.programType} pcConnected={connections.some(c => c.to === `${id}:program-in`)} pcData={getPCForProgram(id)} miningProgress={gameState.unitCoin} money={gameState.money} qCoin={gameState.qCoin} onSetOverclock={handleSetOverclock} onBetUnitCoin={(amount) => setGameState(prev => ({ ...prev, unitCoin: prev.unitCoin + amount }))} onSpendMoney={(amount) => setGameState(prev => ({ ...prev, money: prev.money - amount }))} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />
+                      <ProgramNode id={id} type={node.programType} pcConnected={connections.some(c => c.to === `${id}:program-in`)} pcData={getPCForProgram(id)} miningProgress={gameState.unitCoin} money={gameState.money} qCoin={gameState.qCoin} tumblerFeed={node.feedUC || 0} onSetOverclock={handleSetOverclock} onFeedToTumbler={handleFeedToTumbler} onBetUnitCoin={(amount) => setGameState(prev => ({ ...prev, unitCoin: prev.unitCoin + amount }))} onSpendMoney={(amount) => setGameState(prev => ({ ...prev, money: prev.money - amount }))} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />
                       <button onClick={() => handleStoreToRack(id)} className="absolute -top-2 -right-8 w-5 h-5 rounded-full bg-indigo-600 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Store in Rack">📥</button>
                       <button onClick={() => handleDeleteNode(id)} className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-600 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Delete">✕</button>
                     </div>
@@ -2391,8 +2495,17 @@ export default function MiningGame() {
                       <ShopItem id="ramburner" type="program" name="RAMBurner" specs="OC RAM 2GB" price={50} owned={false} onBuy={handleShopBuy} alwaysBuyable />
                       <ShopItem id="bitwatcher" type="program" name="BitWatcher" specs="Progress 8GB" price={60} owned={false} onBuy={handleShopBuy} alwaysBuyable />
                       <ShopItem id="uhrome" type="program" name="Uhrome" specs="Browser 6GB" price={0} owned={false} onBuy={handleShopBuy} alwaysBuyable />
-                      <ShopItem id="black-market" type="program" name="Black Market" specs="qCoin Exchange 12GB" price={300} owned={false} onBuy={handleShopBuy} alwaysBuyable />
                     </div>
+                  </div>
+
+                  {/* Black Market */}
+                  <div>
+                    <div className="text-red-500 mb-1 text-xs">☠ Black Market</div>
+                    <div className="space-y-1">
+                      <ShopItem id="black-market" type="black-market" name="Black Market" specs="qCoin Exchange 12GB" price={300} owned={false} onBuy={handleShopBuy} alwaysBuyable currency="qcoin" />
+                      <ShopItem id="variety-exe" type="black-market" name="Variety.exe" specs="Tumbler 0.5 qC/s" price={100} owned={false} onBuy={handleShopBuy} alwaysBuyable />
+                    </div>
+                    <div className="text-[10px] text-red-700 mt-1">Black Market purchases use ◈ qCoin (except Variety.exe at $100 starter).</div>
                   </div>
 
                   {/* Cooling */}
