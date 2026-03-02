@@ -1949,7 +1949,6 @@ export default function MiningGame() {
             const [pcId] = conn.from.split(':');
             const pcNode = updated[pcId];
             if (!pcNode || pcNode.type !== 'pc') return;
-            if (!hasPower(pcId) || pcNode.isOverheated) return;
 
             const feedUC = node.feedUC || 0;
             if (feedUC <= 0) return;
