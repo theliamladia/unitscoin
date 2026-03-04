@@ -994,6 +994,7 @@ const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCo
   const [blackOpsSession, setBlackOpsSession] = useState(null);
   const [retumblerLog, setRetumblerLog] = useState('');
   const terminalRef = useRef(null);
+  const blackOpsLogRef = useRef(null);
   const program = COMPONENTS.program[type];
   const target = program?.target; // 'cpu', 'gpu', 'ram', 'display', 'browser', 'blackmarket', 'tumbler', or 'retumbler'
 
@@ -1011,6 +1012,12 @@ const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCo
       terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
     }
   }, [terminalHistory]);
+
+  useEffect(() => {
+    if (blackOpsLogRef.current) {
+      blackOpsLogRef.current.scrollTop = blackOpsLogRef.current.scrollHeight;
+    }
+  }, [blackOpsLog]);
 
   const getTargetName = () => {
     if (target === 'cpu') return 'CPU';
@@ -1397,7 +1404,7 @@ const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCo
           )}
 
           <div className="rounded bg-black/70 border border-red-900/50 text-[10px] mb-2">
-            <div className="p-2 space-y-1 min-h-[86px] max-h-[120px] overflow-y-auto">
+            <div ref={blackOpsLogRef} className="p-2 space-y-1 min-h-[86px] max-h-[120px] overflow-y-auto">
               {blackOpsLog.map((line, idx) => (
                 <div key={idx} className="text-red-300 font-mono">{line}</div>
               ))}
