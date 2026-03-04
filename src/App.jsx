@@ -79,9 +79,17 @@ const TRANSFORMERS = {
   'transformer-large': { name: 'gUnit Pro Zenith 2500W', wattage: 2500, tickFee: 0.024, price: 1200 },
 };
 
+const MINER_TIERS = {
+  'miner-t1': { name: 'aSIC B1', ugsPerMin: 2.2, power: 120, price: 100 },
+  'miner-t2': { name: 'aSIC B2', ugsPerMin: 5.5, power: 180, price: 350 },
+  'miner-t3': { name: 'aSIC B3', ugsPerMin: 12.0, power: 260, price: 900 },
+  'miner-t4': { name: 'aSIC B4', ugsPerMin: 24.0, power: 420, price: 2200 },
+  'miner-t5': { name: 'aSIC B5 Overlord', ugsPerMin: 45.0, power: 700, price: 5000 },
+};
+
 const OVERHEAT_THRESHOLD = 95;
-const MINER_BASE_UGS = 2.2;
-const MINER_POWER_DRAW = 120;
+const ASIC_HUB_POWER_DRAW = 45;
+const WINSLAVE_HUB_POWER_DRAW = 35;
 const STARTER_GFI_DEVICE_WATTAGE = 220;
 const PRICE_TARGET = 2.0;
 const PRICE_FLOOR = 1.2;
@@ -242,6 +250,7 @@ const DraggableNode = ({ id, position, onPositionChange, children, scale = 1 }) 
 
   return (
     <div
+      className="draggable-node"
       ref={nodeRef}
       onMouseDown={handleMouseDown}
       style={{
@@ -439,13 +448,15 @@ const PCNode = ({ id, cpu, gpu, ram, cooling, os, powerConnected, powerInputLink
 };
 
 // Miner Node
-const MinerNode = ({ id, powerConnected, displayConnected, onStartConnection, onEndConnection, onDisconnect }) => (
+const MinerNode = ({ id, minerType = 'miner-t1', powerConnected, displayConnected, onStartConnection, onEndConnection, onDisconnect }) => {
+  const tier = MINER_TIERS[minerType] || MINER_TIERS['miner-t1'];
+  return (
   <div style={{ background: 'linear-gradient(135deg, rgba(30,25,40,0.95), rgba(20,15,30,0.98))', border: `2px solid ${powerConnected ? '#a855f7' : '#333'}`, borderRadius: '10px', padding: '12px', minWidth: '170px', boxShadow: powerConnected ? '0 0 20px rgba(168,85,247,0.2)' : 'none' }}>
     <div className="flex items-center justify-between mb-2">
       <div className="flex items-center gap-2">
         <span className="text-lg">⛏️</span>
         <div>
-          <div className="text-purple-300 font-bold text-xs">aSIC B1 UGS Miner</div>
+          <div className="text-purple-300 font-bold text-xs">{tier.name} UGS Miner</div>
           <div className={`text-xs ${powerConnected ? 'text-purple-400' : 'text-gray-500'}`}>{powerConnected ? '● MINING' : '○ OFF'}</div>
         </div>
       </div>
@@ -462,10 +473,76 @@ const MinerNode = ({ id, powerConnected, displayConnected, onStartConnection, on
       <div className="mt-2 p-1.5 rounded bg-purple-900/30 border border-purple-800/50">
         <div className="flex justify-between items-center">
           <span className="text-purple-400 text-xs">UGS</span>
-          <span className="text-purple-300 font-mono text-xs font-bold">{(MINER_BASE_UGS / 60).toFixed(3)}/s</span>
+          <span className="text-purple-300 font-mono text-xs font-bold">{(tier.ugsPerMin / 60).toFixed(3)}/s</span>
         </div>
       </div>
     )}
+  </div>
+  );
+};
+
+const AsicHubNode = ({ id, powerConnected, minerInputs, outputConnected, onStartConnection, onEndConnection, onDisconnect }) => {
+  const connectedMiners = minerInputs.filter(Boolean).length;
+  return (
+    <div style={{ background: 'linear-gradient(135deg, rgba(34,26,46,0.95), rgba(20,14,30,0.98))', border: `2px solid ${powerConnected ? '#8b5cf6' : '#333'}`, borderRadius: '10px', padding: '12px', minWidth: '230px', boxShadow: powerConnected ? '0 0 20px rgba(139,92,246,0.2)' : 'none' }}>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">🧩</span>
+          <div>
+            <div className="text-violet-300 font-bold text-xs">aSIC Hub</div>
+            <div className={`text-xs ${powerConnected ? 'text-violet-400' : 'text-gray-500'}`}>{powerConnected ? `● ${connectedMiners} Miner Link${connectedMiners === 1 ? '' : 's'}` : '○ NO POWER'}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 mb-2 p-1.5 rounded bg-black/40 border border-yellow-900/30">
+        <Connector direction="input" color="#ffcc00" connected={powerConnected} nodeId={id} connectorId="power-in" onStartConnection={onStartConnection} onEndConnection={onEndConnection} onDisconnect={onDisconnect} />
+        <span className="text-yellow-600 text-xs">PWR</span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-1 mb-2">
+        {[0, 1, 2, 3, 4, 5].map(i => (
+          <div key={i} className="flex items-center gap-1 p-1 rounded bg-black/35">
+            <Connector direction="input" color="#3b82f6" connected={minerInputs[i]} nodeId={id} connectorId={`miner-in-${i}`} onStartConnection={onStartConnection} onEndConnection={onEndConnection} onDisconnect={onDisconnect} />
+            <span className="text-blue-500 text-xs">M{i + 1}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center justify-between pt-2 border-t border-gray-700">
+        <span className="text-cyan-400 text-xs">Hub OUT</span>
+        <Connector direction="output" color="#06b6d4" connected={outputConnected} nodeId={id} connectorId="hub-out" onStartConnection={onStartConnection} onEndConnection={onEndConnection} onDisconnect={onDisconnect} />
+      </div>
+    </div>
+  );
+};
+
+const WinslaveAsicHubNode = ({ id, powerConnected, hubInputConnected, outputConnected, onStartConnection, onEndConnection, onDisconnect }) => (
+  <div style={{ background: 'linear-gradient(135deg, rgba(20,28,46,0.95), rgba(12,16,30,0.98))', border: `2px solid ${powerConnected ? '#22d3ee' : '#333'}`, borderRadius: '10px', padding: '12px', minWidth: '230px', boxShadow: powerConnected ? '0 0 20px rgba(34,211,238,0.2)' : 'none' }}>
+    <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center gap-2">
+        <span className="text-lg">🛰️</span>
+        <div>
+          <div className="text-cyan-300 font-bold text-xs">WinslaveASIC Hub</div>
+          <div className={`text-xs ${powerConnected && hubInputConnected ? 'text-cyan-400' : 'text-gray-500'}`}>{powerConnected && hubInputConnected ? '● SIGNAL READY' : '○ WAITING'}</div>
+        </div>
+      </div>
+    </div>
+
+    <div className="flex items-center gap-2 mb-2 p-1.5 rounded bg-black/40 border border-yellow-900/30">
+      <Connector direction="input" color="#ffcc00" connected={powerConnected} nodeId={id} connectorId="power-in" onStartConnection={onStartConnection} onEndConnection={onEndConnection} onDisconnect={onDisconnect} />
+      <span className="text-yellow-600 text-xs">PWR</span>
+    </div>
+
+    <div className="flex items-center gap-2 mb-2 p-1.5 rounded bg-black/40 border border-cyan-900/30">
+      <Connector direction="input" color="#06b6d4" connected={hubInputConnected} nodeId={id} connectorId="hub-in" onStartConnection={onStartConnection} onEndConnection={onEndConnection} onDisconnect={onDisconnect} />
+      <span className="text-cyan-500 text-xs">Hub IN</span>
+    </div>
+
+    <div className="flex items-center justify-between pt-2 border-t border-gray-700">
+      <span className="text-green-400 text-xs">Interface OUT</span>
+      <Connector direction="output" color="#22c55e" connected={outputConnected} nodeId={id} connectorId="interface-out" onStartConnection={onStartConnection} onEndConnection={onEndConnection} onDisconnect={onDisconnect} />
+    </div>
   </div>
 );
 
@@ -1988,6 +2065,9 @@ export default function MiningGame() {
   const [nodeCounter, setNodeCounter] = useState(savedState?.nodeCounter || 2);
   const [cheatTerminalOpen, setCheatTerminalOpen] = useState(false);
   const [cheatInput, setCheatInput] = useState('');
+  const [canvasPan, setCanvasPan] = useState({ x: 0, y: 0 });
+  const [isPanningCanvas, setIsPanningCanvas] = useState(false);
+  const [panStart, setPanStart] = useState({ mouseX: 0, mouseY: 0, startX: 0, startY: 0 });
   
   const workspaceRef = useRef(null);
   const scale = gameState.viewScale ?? CANVAS_SCALES[gameState.canvasLevel];
@@ -2112,16 +2192,54 @@ export default function MiningGame() {
       return !!transformerData && draw <= transformerData.wattage;
     }
     if (node.type === 'miner') {
-      if (source.type === 'grid') return MINER_POWER_DRAW <= STARTER_GFI_DEVICE_WATTAGE;
+      const tier = MINER_TIERS[node.minerType] || MINER_TIERS['miner-t1'];
+      const draw = tier.power;
+      if (source.type === 'grid') return draw <= STARTER_GFI_DEVICE_WATTAGE;
       const transformerNode = nodes[source.id];
       const transformerData = transformerNode ? TRANSFORMERS[transformerNode.transformerType] : null;
-      return !!transformerData && MINER_POWER_DRAW <= transformerData.wattage;
+      return !!transformerData && draw <= transformerData.wattage;
+    }
+    if (node.type === 'asic-hub') {
+      if (source.type === 'grid') return ASIC_HUB_POWER_DRAW <= STARTER_GFI_DEVICE_WATTAGE;
+      const transformerNode = nodes[source.id];
+      const transformerData = transformerNode ? TRANSFORMERS[transformerNode.transformerType] : null;
+      return !!transformerData && ASIC_HUB_POWER_DRAW <= transformerData.wattage;
+    }
+    if (node.type === 'winslave-asic-hub') {
+      if (source.type === 'grid') return WINSLAVE_HUB_POWER_DRAW <= STARTER_GFI_DEVICE_WATTAGE;
+      const transformerNode = nodes[source.id];
+      const transformerData = transformerNode ? TRANSFORMERS[transformerNode.transformerType] : null;
+      return !!transformerData && WINSLAVE_HUB_POWER_DRAW <= transformerData.wattage;
     }
 
     return source.type === 'grid' || source.type === 'transformer';
   }, [getPowerSource, inboundPowerByNode, nodes]);
 
   const hasDisplay = useCallback((nodeId) => connections.some(c => c.from === `${nodeId}:display-out`), [connections]);
+
+  const getMinerSourcesForAsicHub = useCallback((hubId) => {
+    const sources = [];
+    for (let i = 0; i < 6; i++) {
+      const conn = connections.find(c => c.to === `${hubId}:miner-in-${i}`);
+      if (!conn) continue;
+      const [minerId] = conn.from.split(':');
+      const minerNode = nodes[minerId];
+      if (minerNode?.type === 'miner' && hasPower(minerId)) {
+        sources.push({ id: minerId, type: 'miner', node: minerNode });
+      }
+    }
+    return sources;
+  }, [connections, nodes, hasPower]);
+
+  const getMinerSourcesForWinslaveHub = useCallback((winslaveId) => {
+    if (!hasPower(winslaveId)) return [];
+    const inConn = connections.find(c => c.to === `${winslaveId}:hub-in`);
+    if (!inConn) return [];
+    const [asicHubId] = inConn.from.split(':');
+    const asicHubNode = nodes[asicHubId];
+    if (!asicHubNode || asicHubNode.type !== 'asic-hub' || !hasPower(asicHubId)) return [];
+    return getMinerSourcesForAsicHub(asicHubId);
+  }, [connections, nodes, hasPower, getMinerSourcesForAsicHub]);
 
   // Get PC data for program nodes
   const getPCForProgram = useCallback((programId) => {
@@ -2146,6 +2264,9 @@ export default function MiningGame() {
     if (sourceNode.type === 'pc' || sourceNode.type === 'miner') {
       return [{ id: sourceId, type: sourceNode.type, node: sourceNode }];
     }
+    if (sourceNode.type === 'winslave-asic-hub') {
+      return getMinerSourcesForWinslaveHub(sourceId);
+    }
     
     // Through interface hub
     if (sourceNode.type === 'interface-hub') {
@@ -2158,6 +2279,10 @@ export default function MiningGame() {
           if (deviceNode?.type === 'pc' || deviceNode?.type === 'miner') {
             sources.push({ id: deviceId, type: deviceNode.type, node: deviceNode });
           }
+          if (deviceNode?.type === 'winslave-asic-hub') {
+            const winslaveSources = getMinerSourcesForWinslaveHub(deviceId);
+            winslaveSources.forEach((s) => sources.push(s));
+          }
         }
       }
       return sources;
@@ -2165,7 +2290,7 @@ export default function MiningGame() {
     
     // Unknown source
     return [];
-  }, [connections, nodes]);
+  }, [connections, nodes, getMinerSourcesForWinslaveHub]);
 
   const getSelectedDisplaySource = useCallback((interfaceId) => {
     const sources = getDisplaySourcesForInterface(interfaceId);
@@ -2344,14 +2469,22 @@ export default function MiningGame() {
     const handleMouseMove = (e) => {
       if (workspaceRef.current && drawingConnection) {
         const rect = workspaceRef.current.getBoundingClientRect();
-        setMousePos({ x: (e.clientX - rect.left) / scale, y: (e.clientY - rect.top) / scale });
+        setMousePos({ x: (e.clientX - rect.left - canvasPan.x) / scale, y: (e.clientY - rect.top - canvasPan.y) / scale });
+      }
+      if (isPanningCanvas) {
+        const dx = e.clientX - panStart.mouseX;
+        const dy = e.clientY - panStart.mouseY;
+        setCanvasPan({ x: panStart.startX + dx, y: panStart.startY + dy });
       }
     };
-    const handleMouseUp = () => setDrawingConnection(null);
+    const handleMouseUp = () => {
+      setDrawingConnection(null);
+      setIsPanningCanvas(false);
+    };
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
     return () => { window.removeEventListener('mousemove', handleMouseMove); window.removeEventListener('mouseup', handleMouseUp); };
-  }, [drawingConnection, scale]);
+  }, [drawingConnection, scale, canvasPan.x, canvasPan.y, isPanningCanvas, panStart]);
 
   const handlePositionChange = useCallback((id, newPos) => {
     setNodes(prev => ({ ...prev, [id]: { ...prev[id], position: newPos } }));
@@ -2373,6 +2506,12 @@ export default function MiningGame() {
     if (node.type === 'program' && node.programType === 'ghostie-vpn' && connectorId === 'vpn-out') {
       return { x: pos.x + 264, y: pos.y + 86 };
     }
+    if (node.type === 'asic-hub' && connectorId.startsWith('miner-in-')) {
+      const i = parseInt(connectorId.split('-')[2], 10) || 0;
+      const row = Math.floor(i / 2);
+      const col = i % 2;
+      return { x: pos.x + 18 + col * 110, y: pos.y + 80 + row * 28 };
+    }
     
     const offsets = {
       'power-grid': { 'power-out': { x: 150, y: 62 } },
@@ -2380,6 +2519,8 @@ export default function MiningGame() {
       'power-strip': { 'power-in': { x: 18, y: 55 }, 'power-out-0': { x: 78, y: 100 }, 'power-out-1': { x: 168, y: 100 }, 'power-out-2': { x: 78, y: 128 }, 'power-out-3': { x: 168, y: 128 } },
       'pc': { 'power-in': { x: 18, y: 68 }, 'display-out': { x: 248, y: 260 } },
       'miner': { 'power-in': { x: 18, y: 55 }, 'display-out': { x: 158, y: 98 } },
+      'asic-hub': { 'power-in': { x: 18, y: 56 }, 'hub-out': { x: 218, y: 168 } },
+      'winslave-asic-hub': { 'power-in': { x: 18, y: 56 }, 'hub-in': { x: 18, y: 92 }, 'interface-out': { x: 218, y: 128 } },
       'interface-hub': { 'display-in-0': { x: 18, y: 68 }, 'display-in-1': { x: 108, y: 68 }, 'display-in-2': { x: 18, y: 96 }, 'display-in-3': { x: 108, y: 96 }, 'signal-out': { x: 188, y: 130 } },
       'interface': { 'display-in': { x: 208, y: 28 } },
       'program': { 'program-in': { x: 18, y: 55 } },
@@ -2403,11 +2544,11 @@ export default function MiningGame() {
     let valid = false;
     // Power connections
     if (fromConn === 'power-out' && connectorId === 'power-in') {
-      if (fromType === 'power-grid' && ['pc', 'power-strip', 'miner', 'transformer'].includes(toType)) valid = true;
-      if (fromType === 'transformer' && ['pc', 'power-strip', 'miner'].includes(toType)) valid = true;
+      if (fromType === 'power-grid' && ['pc', 'power-strip', 'miner', 'transformer', 'asic-hub', 'winslave-asic-hub'].includes(toType)) valid = true;
+      if (fromType === 'transformer' && ['pc', 'power-strip', 'miner', 'asic-hub', 'winslave-asic-hub'].includes(toType)) valid = true;
     }
     if (fromConn.startsWith('power-out-') && connectorId === 'power-in') {
-      if (fromType === 'power-strip' && ['pc', 'miner'].includes(toType)) valid = true;
+      if (fromType === 'power-strip' && ['pc', 'miner', 'asic-hub', 'winslave-asic-hub'].includes(toType)) valid = true;
     }
     // Display connections (to interface or interface-hub)
     if (fromConn === 'display-out' && connectorId === 'display-in') {
@@ -2415,6 +2556,21 @@ export default function MiningGame() {
     }
     if (fromConn === 'display-out' && connectorId.startsWith('display-in-')) {
       if (['pc', 'miner'].includes(fromType) && toType === 'interface-hub') valid = true;
+    }
+    // Miner -> aSIC Hub
+    if (fromConn === 'display-out' && connectorId.startsWith('miner-in-')) {
+      if (fromType === 'miner' && toType === 'asic-hub') valid = true;
+    }
+    // aSIC Hub -> WinslaveASIC Hub
+    if (fromConn === 'hub-out' && connectorId === 'hub-in') {
+      if (fromType === 'asic-hub' && toType === 'winslave-asic-hub') valid = true;
+    }
+    // WinslaveASIC Hub -> Interface / Interface Hub
+    if (fromConn === 'interface-out' && connectorId === 'display-in') {
+      if (fromType === 'winslave-asic-hub' && toType === 'interface') valid = true;
+    }
+    if (fromConn === 'interface-out' && connectorId.startsWith('display-in-')) {
+      if (fromType === 'winslave-asic-hub' && toType === 'interface-hub') valid = true;
     }
     // Interface Hub signal out to Interface display in
     if (fromConn === 'signal-out' && connectorId === 'display-in') {
@@ -2554,8 +2710,15 @@ export default function MiningGame() {
       
       const nodeTypes = {
         'pc-case': { type: 'pc', position: { x: 240 + Math.random() * 180, y: 120 + Math.random() * 180 }, cpu: null, gpu: null, ram: [null, null, null, null], cooling: null, os: null, cpuOC: 0, gpuOC: 0, ramOC: 0, isOverheated: false, currentTemp: 25 },
+        'asic-hub': { type: 'asic-hub', position: { x: 420 + Math.random() * 120, y: 220 + Math.random() * 120 } },
+        'winslave-asic-hub': { type: 'winslave-asic-hub', position: { x: 620 + Math.random() * 120, y: 220 + Math.random() * 120 } },
         'power-strip': { type: 'power-strip', position: { x: 50 + Math.random() * 100, y: 200 + Math.random() * 100 } },
-        'miner': { type: 'miner', position: { x: 300 + Math.random() * 100, y: 250 + Math.random() * 100 } },
+        'miner': { type: 'miner', minerType: 'miner-t1', position: { x: 300 + Math.random() * 100, y: 250 + Math.random() * 100 } },
+        'miner-t1': { type: 'miner', minerType: 'miner-t1', position: { x: 300 + Math.random() * 100, y: 250 + Math.random() * 100 } },
+        'miner-t2': { type: 'miner', minerType: 'miner-t2', position: { x: 300 + Math.random() * 100, y: 250 + Math.random() * 100 } },
+        'miner-t3': { type: 'miner', minerType: 'miner-t3', position: { x: 300 + Math.random() * 100, y: 250 + Math.random() * 100 } },
+        'miner-t4': { type: 'miner', minerType: 'miner-t4', position: { x: 300 + Math.random() * 100, y: 250 + Math.random() * 100 } },
+        'miner-t5': { type: 'miner', minerType: 'miner-t5', position: { x: 300 + Math.random() * 100, y: 250 + Math.random() * 100 } },
         'interface-hub': { type: 'interface-hub', position: { x: 500 + Math.random() * 100, y: 150 + Math.random() * 100 } },
         'program-rack': { type: 'program-rack', position: { x: 450 + Math.random() * 100, y: 200 + Math.random() * 100 }, slots: [null, null, null] },
         'transformer-small': { type: 'transformer', transformerType: 'transformer-small', position: { x: 100 + Math.random() * 100, y: 150 + Math.random() * 100 } },
@@ -2623,15 +2786,23 @@ export default function MiningGame() {
   };
 
   const handleWorkspaceWheel = (e) => {
-    if (gameState.canvasLevel < 3) return;
+    if (gameState.canvasLevel < 2) return;
     e.preventDefault();
     setGameState(prev => {
       const minScale = CANVAS_SCALES[prev.canvasLevel];
       const next = prev.viewScale + (e.deltaY > 0 ? -0.05 : 0.05);
-      const clamped = Math.max(minScale, Math.min(1, next));
+      const clamped = Math.max(minScale, Math.min(1.5, next));
       if (clamped === prev.viewScale) return prev;
       return { ...prev, viewScale: clamped };
     });
+  };
+
+  const handleWorkspaceMouseDown = (e) => {
+    if (gameState.canvasLevel < 2) return;
+    if (e.button !== 0) return;
+    if (e.target.closest('.draggable-node') || e.target.closest('.connector') || e.target.closest('button') || e.target.closest('input') || e.target.closest('.slot')) return;
+    setIsPanningCanvas(true);
+    setPanStart({ mouseX: e.clientX, mouseY: e.clientY, startX: canvasPan.x, startY: canvasPan.y });
   };
 
   // Delete a node (not allowed for power-grid, pc, interface)
@@ -2740,7 +2911,10 @@ export default function MiningGame() {
   // Calculate totals
   const totalUGS = Object.entries(nodes).reduce((sum, [id, node]) => {
     if (node.type === 'pc' && hasPower(id) && !node.isOverheated) return sum + calculateUGS(node.cpu, node.gpu, node.ram, node.cpuOC || 0, node.gpuOC || 0, node.ramOC || 0);
-    if (node.type === 'miner' && hasPower(id)) return sum + MINER_BASE_UGS;
+    if (node.type === 'miner' && hasPower(id)) {
+      const tier = MINER_TIERS[node.minerType] || MINER_TIERS['miner-t1'];
+      return sum + tier.ugsPerMin;
+    }
     return sum;
   }, 0);
 
@@ -2838,13 +3012,14 @@ export default function MiningGame() {
           <div
             ref={workspaceRef}
             onWheel={handleWorkspaceWheel}
+            onMouseDown={handleWorkspaceMouseDown}
             className="flex-1 rounded-xl relative overflow-hidden"
-            style={{ background: 'linear-gradient(135deg, rgba(12,16,28,0.9), rgba(8,12,20,0.95))', border: '1px solid rgba(255,255,255,0.05)', height: '580px' }}
+            style={{ background: 'linear-gradient(135deg, rgba(12,16,28,0.9), rgba(8,12,20,0.95))', border: '1px solid rgba(255,255,255,0.05)', height: '580px', cursor: isPanningCanvas ? 'grabbing' : (gameState.canvasLevel >= 2 ? 'grab' : 'default') }}
           >
             <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)', backgroundSize: '30px 30px' }} />
 
             {/* Scaled content */}
-            <div style={{ transform: `scale(${scale})`, transformOrigin: 'top left', width: `${100 / scale}%`, height: `${100 / scale}%`, position: 'relative' }}>
+            <div style={{ transform: `translate(${canvasPan.x}px, ${canvasPan.y}px) scale(${scale})`, transformOrigin: 'top left', width: `${100 / scale}%`, height: `${100 / scale}%`, position: 'relative' }}>
               {connections.map((conn, i) => {
                 const [fromNode, fromConn] = conn.from.split(':');
                 const [toNode, toConn] = conn.to.split(':');
@@ -2867,10 +3042,38 @@ export default function MiningGame() {
                       <button onClick={() => handleDeleteNode(id)} className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-600 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Delete">✕</button>
                     </div>
                   )}
+                  {node.type === 'asic-hub' && (
+                    <div className="relative group">
+                      <AsicHubNode
+                        id={id}
+                        powerConnected={hasPower(id)}
+                        minerInputs={[0,1,2,3,4,5].map(i => connections.some(c => c.to === `${id}:miner-in-${i}`))}
+                        outputConnected={connections.some(c => c.from === `${id}:hub-out`)}
+                        onStartConnection={handleStartConnection}
+                        onEndConnection={handleEndConnection}
+                        onDisconnect={handleDisconnect}
+                      />
+                      <button onClick={() => handleDeleteNode(id)} className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-600 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Delete">✕</button>
+                    </div>
+                  )}
+                  {node.type === 'winslave-asic-hub' && (
+                    <div className="relative group">
+                      <WinslaveAsicHubNode
+                        id={id}
+                        powerConnected={hasPower(id)}
+                        hubInputConnected={connections.some(c => c.to === `${id}:hub-in`)}
+                        outputConnected={connections.some(c => c.from === `${id}:interface-out`)}
+                        onStartConnection={handleStartConnection}
+                        onEndConnection={handleEndConnection}
+                        onDisconnect={handleDisconnect}
+                      />
+                      <button onClick={() => handleDeleteNode(id)} className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-600 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Delete">✕</button>
+                    </div>
+                  )}
                   {node.type === 'pc' && <PCNode id={id} cpu={node.cpu} gpu={node.gpu} ram={node.ram} cooling={node.cooling} os={node.os} powerConnected={hasPower(id)} powerInputLinked={connections.some(c => c.to === `${id}:power-in`)} displayConnected={hasDisplay(id)} programConnections={[0,1,2,3].map(i => connections.some(c => c.from === `${id}:program-out-${i}`))} cpuOC={node.cpuOC || 0} gpuOC={node.gpuOC || 0} ramOC={node.ramOC || 0} isOverheated={node.isOverheated} currentTemp={node.currentTemp} onSlotDrop={(type, itemId, index) => handleSlotDrop(id, type, itemId, index)} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />}
                   {node.type === 'miner' && (
                     <div className="relative group">
-                      <MinerNode id={id} powerConnected={hasPower(id)} displayConnected={hasDisplay(id)} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />
+                      <MinerNode id={id} minerType={node.minerType || 'miner-t1'} powerConnected={hasPower(id)} displayConnected={hasDisplay(id)} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />
                       <button onClick={() => handleDeleteNode(id)} className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-600 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Delete">✕</button>
                     </div>
                   )}
@@ -2899,7 +3102,7 @@ export default function MiningGame() {
             </div>
 
             <div className="absolute bottom-2 left-2 right-2 p-1.5 rounded bg-black/60 border border-blue-900/30">
-              <div className="text-blue-400 text-xs">💡 Drag nodes • Connect outputs→inputs • Click input to disconnect {gameState.canvasLevel >= 3 ? '• Mouse wheel to zoom' : ''}</div>
+              <div className="text-blue-400 text-xs">💡 Drag nodes • Connect outputs→inputs • Click connector to disconnect {gameState.canvasLevel >= 2 ? '• Wheel to zoom • Drag empty canvas to pan' : ''}</div>
             </div>
           </div>
 
@@ -2939,9 +3142,30 @@ export default function MiningGame() {
                     <div className="space-y-1">
                       <ShopItem id="pc-case" type="node" name="PC Case" specs="Empty 4-slot rig" price={350} owned={false} onBuy={handleShopBuy} alwaysBuyable />
                       <ShopItem id="power-strip" type="node" name="Power Strip" specs="4-way" price={25} owned={false} onBuy={handleShopBuy} alwaysBuyable />
-                      <ShopItem id="miner" type="node" name="aSIC B1 Miner" specs={`${(MINER_BASE_UGS / 60).toFixed(3)}/s`} price={100} owned={false} onBuy={handleShopBuy} alwaysBuyable />
                       <ShopItem id="interface-hub" type="node" name="Interface Hub" specs="4 inputs" price={40} owned={false} onBuy={handleShopBuy} alwaysBuyable />
                       <ShopItem id="program-rack" type="node" name="Program Rack" specs="3 slots" price={75} owned={false} onBuy={handleShopBuy} alwaysBuyable />
+                    </div>
+                  </div>
+
+                  {/* ASIC Hubs */}
+                  <div>
+                    <div className="text-indigo-500 mb-1 text-xs">🧩 ASIC Hubs</div>
+                    <div className="space-y-1">
+                      <ShopItem id="asic-hub" type="node" name="aSIC Hub" specs="PWR + 6 Miner IN -> Hub OUT" price={180} owned={false} onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="winslave-asic-hub" type="node" name="WinslaveASIC Hub" specs="PWR + Hub IN -> Interface OUT" price={240} owned={false} onBuy={handleShopBuy} alwaysBuyable />
+                    </div>
+                    <div className="text-[10px] text-indigo-700 mt-1">Wire: Miner -> aSIC Hub -> WinslaveASIC Hub -> Interface.</div>
+                  </div>
+
+                  {/* ASIC Miners */}
+                  <div>
+                    <div className="text-purple-400 mb-1 text-xs">⛏️ aSIC Miners (Tiers)</div>
+                    <div className="space-y-1">
+                      <ShopItem id="miner-t1" type="node" name={MINER_TIERS['miner-t1'].name} specs={`${(MINER_TIERS['miner-t1'].ugsPerMin / 60).toFixed(3)}/s • ${MINER_TIERS['miner-t1'].power}W`} price={MINER_TIERS['miner-t1'].price} owned={false} onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="miner-t2" type="node" name={MINER_TIERS['miner-t2'].name} specs={`${(MINER_TIERS['miner-t2'].ugsPerMin / 60).toFixed(3)}/s • ${MINER_TIERS['miner-t2'].power}W`} price={MINER_TIERS['miner-t2'].price} owned={false} onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="miner-t3" type="node" name={MINER_TIERS['miner-t3'].name} specs={`${(MINER_TIERS['miner-t3'].ugsPerMin / 60).toFixed(3)}/s • ${MINER_TIERS['miner-t3'].power}W`} price={MINER_TIERS['miner-t3'].price} owned={false} onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="miner-t4" type="node" name={MINER_TIERS['miner-t4'].name} specs={`${(MINER_TIERS['miner-t4'].ugsPerMin / 60).toFixed(3)}/s • ${MINER_TIERS['miner-t4'].power}W`} price={MINER_TIERS['miner-t4'].price} owned={false} onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="miner-t5" type="node" name={MINER_TIERS['miner-t5'].name} specs={`${(MINER_TIERS['miner-t5'].ugsPerMin / 60).toFixed(3)}/s • ${MINER_TIERS['miner-t5'].power}W`} price={MINER_TIERS['miner-t5'].price} owned={false} onBuy={handleShopBuy} alwaysBuyable />
                     </div>
                   </div>
 
