@@ -67,6 +67,8 @@ const COMPONENTS = {
     'black-market': { name: 'Black Market', description: 'Underground qCoin Exchange', price: 300, target: 'blackmarket', ramReq: 12 },
     'variety-exe': { name: 'Variety.exe', description: 'UnitCoin to qCoin Tumbler', price: 100, target: 'tumbler', ramReq: 8 },
     'rrtumblr': { name: 'RRtumblr.exe', description: 'qCoin Re-Tumbler', price: 80, target: 'retumbler', ramReq: 10 },
+    'dark-auctions': { name: 'DarkAuctions', description: 'Payload Auction Terminal', price: 140, target: 'darkauctions', ramReq: 12 },
+    'ghostie-vpn': { name: 'GhostieVPN', description: 'Cloaked Tunnel Uplink', price: 70, target: 'vpn', ramReq: 6 },
   },
 };
 
@@ -985,7 +987,7 @@ const UhromeBrowser = ({ id, pcConnected, miningProgress, onUnitCoinDelta, onSpe
 };
 
 // Program Node (Burners, BitWatcher, and Uhrome Browser)
-const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCoin, tumblerFeed = 0, onSetOverclock, onFeedToTumbler, onUnitCoinDelta, onQCoinDelta, onSpendMoney, onStartConnection, onEndConnection, onDisconnect }) => {
+const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCoin, tumblerFeed = 0, vpnConnected = false, auctionLastReward = null, onSetOverclock, onFeedToTumbler, onRunDarkAuction, onUnitCoinDelta, onQCoinDelta, onSpendMoney, onStartConnection, onEndConnection, onDisconnect }) => {
   const [terminalHistory, setTerminalHistory] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [feedAmount, setFeedAmount] = useState('1');
@@ -996,10 +998,10 @@ const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCo
   const terminalRef = useRef(null);
   const blackOpsLogRef = useRef(null);
   const program = COMPONENTS.program[type];
-  const target = program?.target; // 'cpu', 'gpu', 'ram', 'display', 'browser', 'blackmarket', 'tumbler', or 'retumbler'
+  const target = program?.target; // 'cpu', 'gpu', 'ram', 'display', 'browser', 'blackmarket', 'tumbler', 'retumbler', 'darkauctions', or 'vpn'
 
   useEffect(() => {
-    if (target && target !== 'display' && target !== 'browser' && target !== 'blackmarket' && target !== 'tumbler' && target !== 'retumbler') {
+    if (target && target !== 'display' && target !== 'browser' && target !== 'blackmarket' && target !== 'tumbler' && target !== 'retumbler' && target !== 'darkauctions' && target !== 'vpn') {
       setTerminalHistory([
         { type: 'system', text: `${program?.name} v1.0 initialized` },
         { type: 'system', text: 'Type "oc help" for commands' }
@@ -1556,6 +1558,84 @@ const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCo
     );
   }
 
+  if (target === 'vpn') {
+    return (
+      <div style={{ background: 'linear-gradient(135deg, rgba(6,24,28,0.96), rgba(4,12,15,0.98))', border: `2px solid ${pcConnected ? '#14b8a6' : '#333'}`, borderRadius: '10px', padding: '12px', minWidth: '280px', boxShadow: pcConnected ? '0 0 20px rgba(20,184,166,0.2)' : 'none' }}>
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">👻</span>
+            <div>
+              <div className="text-teal-300 font-bold text-xs">{program.name}</div>
+              <div className={`text-xs ${pcConnected ? 'text-teal-400' : 'text-gray-500'}`}>{pcConnected ? '● TUNNEL READY' : '○ NO PC LINK'}</div>
+            </div>
+          </div>
+          <div className="text-xs text-teal-300 font-mono">{program.ramReq}GB RAM</div>
+        </div>
+
+        <div className="flex items-center gap-2 mb-2 p-1.5 rounded bg-black/50 border border-teal-900/40">
+          <Connector direction="input" color="#a855f7" connected={pcConnected} nodeId={id} connectorId="program-in" onStartConnection={onStartConnection} onEndConnection={onEndConnection} onDisconnect={onDisconnect} />
+          <span className="text-purple-300 text-xs">PC IN</span>
+        </div>
+
+        <div className="flex items-center justify-between p-1.5 rounded bg-black/50 border border-teal-900/40">
+          <span className="text-teal-400 text-xs">VPN OUT</span>
+          <Connector direction="output" color="#14b8a6" connected={false} nodeId={id} connectorId="vpn-out" onStartConnection={onStartConnection} onEndConnection={onEndConnection} onDisconnect={onDisconnect} />
+        </div>
+
+        <div className="text-[10px] text-teal-500 mt-2">Connect VPN OUT to DarkAuctions VPN IN.</div>
+      </div>
+    );
+  }
+
+  if (target === 'darkauctions') {
+    return (
+      <div style={{ background: 'linear-gradient(135deg, rgba(26,8,26,0.96), rgba(10,4,14,0.98))', border: `2px solid ${pcConnected ? '#a855f7' : '#333'}`, borderRadius: '10px', padding: '12px', minWidth: '320px', boxShadow: pcConnected ? '0 0 20px rgba(168,85,247,0.2)' : 'none' }}>
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">🕳️</span>
+            <div>
+              <div className="text-purple-300 font-bold text-xs">{program.name}</div>
+              <div className={`text-xs ${pcConnected ? 'text-purple-400' : 'text-gray-500'}`}>{pcConnected ? '● INTERFACE OPEN' : '○ NO PC'}</div>
+            </div>
+          </div>
+          <div className="text-xs text-purple-300 font-mono">{program.ramReq}GB RAM</div>
+        </div>
+
+        <div className="space-y-2 mb-2">
+          <div className="flex items-center gap-2 p-1.5 rounded bg-black/50 border border-purple-900/40">
+            <Connector direction="input" color="#a855f7" connected={pcConnected} nodeId={id} connectorId="program-in" onStartConnection={onStartConnection} onEndConnection={onEndConnection} onDisconnect={onDisconnect} />
+            <span className="text-purple-300 text-xs">PC IN</span>
+          </div>
+          <div className="flex items-center gap-2 p-1.5 rounded bg-black/50 border border-teal-900/40">
+            <Connector direction="input" color="#14b8a6" connected={vpnConnected} nodeId={id} connectorId="vpn-in" onStartConnection={onStartConnection} onEndConnection={onEndConnection} onDisconnect={onDisconnect} />
+            <span className="text-teal-300 text-xs">VPN IN</span>
+          </div>
+        </div>
+
+        <div
+          onDragOver={(e) => { e.preventDefault(); }}
+          onDrop={(e) => {
+            e.preventDefault();
+            const itemId = e.dataTransfer.getData('itemId');
+            const itemType = e.dataTransfer.getData('itemType');
+            if (itemType !== 'payload') return;
+            onRunDarkAuction(id, itemId);
+          }}
+          className="p-3 rounded border-2 border-dashed text-center"
+          style={{ borderColor: pcConnected && vpnConnected ? '#a855f7' : '#444', background: 'rgba(0,0,0,0.45)' }}
+        >
+          <div className="text-purple-300 text-xs font-mono">DROP DIGITAL PAYLOAD</div>
+          <div className="text-[10px] text-gray-400 mt-1">
+            {pcConnected && vpnConnected ? 'Payloads can return 1-100 qC.' : 'Requires PC IN and GhostieVPN link.'}
+          </div>
+          {auctionLastReward !== null && (
+            <div className="text-[11px] text-green-400 font-mono mt-2">Last auction: +{auctionLastReward} qC</div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   // Burner terminal rendering
   return (
     <div style={{ background: 'linear-gradient(135deg, rgba(15,20,15,0.95), rgba(10,15,10,0.98))', border: `2px solid ${pcConnected ? borderColor : '#333'}`, borderRadius: '10px', padding: '12px', minWidth: '260px', boxShadow: pcConnected ? `0 0 20px ${borderColor}30` : 'none' }}>
@@ -1787,7 +1867,7 @@ const ConnectionLine = ({ startPos, endPos, color, isDrawing }) => {
 
 // Shop Item
 const ShopItem = ({ id, type, name, specs, price, owned, quantity, draggableItem = false, onBuy, alwaysBuyable, currency = 'money' }) => {
-  const colors = { cpu: '#00d4ff', gpu: '#ff6b00', ram: '#b44aff', os: '#22c55e', node: '#a855f7', cooling: '#06b6d4', program: '#22c55e', transformer: '#ff9500', 'black-market': '#ef4444' };
+  const colors = { cpu: '#00d4ff', gpu: '#ff6b00', ram: '#b44aff', os: '#22c55e', node: '#a855f7', cooling: '#06b6d4', program: '#22c55e', transformer: '#ff9500', payload: '#f59e0b', 'black-market': '#ef4444' };
   const count = typeof quantity === 'number' ? quantity : (owned ? 1 : 0);
   const canBuy = alwaysBuyable || count <= 0;
   const canDrag = draggableItem && count > 0;
@@ -2287,6 +2367,12 @@ export default function MiningGame() {
       const slotIndex = parseInt(connectorId.split('-')[2]);
       return { x: pos.x + 45 + slotIndex * 50, y: pos.y + 320 };
     }
+    if (node.type === 'program' && node.programType === 'dark-auctions' && connectorId === 'vpn-in') {
+      return { x: pos.x + 18, y: pos.y + 86 };
+    }
+    if (node.type === 'program' && node.programType === 'ghostie-vpn' && connectorId === 'vpn-out') {
+      return { x: pos.x + 264, y: pos.y + 86 };
+    }
     
     const offsets = {
       'power-grid': { 'power-out': { x: 150, y: 62 } },
@@ -2340,6 +2426,14 @@ export default function MiningGame() {
     }
     if (fromConn.startsWith('program-out') && connectorId.startsWith('rack-program-in-')) {
       if (fromType === 'pc' && toType === 'program-rack') valid = true;
+    }
+    // VPN tunnel connection (GhostieVPN -> DarkAuctions)
+    if (fromConn === 'vpn-out' && connectorId === 'vpn-in') {
+      if (fromType === 'program' && toType === 'program') {
+        const fromProgram = nodes[fromNode];
+        const toProgram = nodes[nodeId];
+        if (fromProgram?.programType === 'ghostie-vpn' && toProgram?.programType === 'dark-auctions') valid = true;
+      }
     }
 
     if (valid) {
@@ -2475,6 +2569,8 @@ export default function MiningGame() {
         'black-market': { type: 'program', programType: 'black-market', position: { x: 500 + Math.random() * 100, y: 300 + Math.random() * 100 } },
         'variety-exe': { type: 'program', programType: 'variety-exe', feedUC: 0, position: { x: 520 + Math.random() * 100, y: 320 + Math.random() * 100 } },
         'rrtumblr': { type: 'program', programType: 'rrtumblr', position: { x: 540 + Math.random() * 100, y: 340 + Math.random() * 100 } },
+        'dark-auctions': { type: 'program', programType: 'dark-auctions', auctionLastReward: null, position: { x: 560 + Math.random() * 100, y: 360 + Math.random() * 100 } },
+        'ghostie-vpn': { type: 'program', programType: 'ghostie-vpn', position: { x: 580 + Math.random() * 100, y: 380 + Math.random() * 100 } },
       };
       
       if (nodeTypes[id]) {
@@ -2495,6 +2591,27 @@ export default function MiningGame() {
       if (!node || node.type !== 'program' || node.programType !== 'variety-exe') return prev;
       return { ...prev, [programId]: { ...node, feedUC: (node.feedUC || 0) + amount } };
     });
+  };
+
+  const handleRunDarkAuction = (programId, itemId) => {
+    const programNode = nodes[programId];
+    if (!programNode || programNode.type !== 'program' || programNode.programType !== 'dark-auctions') return;
+
+    const hasPcLink = connections.some(c => c.to === `${programId}:program-in`);
+    const hasVpnLink = connections.some(c => c.to === `${programId}:vpn-in`);
+    if (!hasPcLink || !hasVpnLink) return;
+    if (itemId !== 'digital-payload') return;
+    if ((inventory[itemId] || 0) <= 0) return;
+
+    const reward = 1 + Math.floor(Math.random() * 100);
+    setInventory(prev => {
+      const next = { ...prev };
+      next[itemId] = (next[itemId] || 0) - 1;
+      if (next[itemId] <= 0) delete next[itemId];
+      return next;
+    });
+    setGameState(prev => ({ ...prev, qCoin: prev.qCoin + reward }));
+    setNodes(prev => ({ ...prev, [programId]: { ...prev[programId], auctionLastReward: reward } }));
   };
 
   const handleBuyCanvas = (level) => {
@@ -2766,7 +2883,7 @@ export default function MiningGame() {
                   {node.type === 'interface' && <InterfaceNode id={id} connected={connections.some(c => c.to === `${id}:display-in`)} pcData={getPCDataForInterface(id)} hasMinerConnected={hasMinerConnected(id)} sourceInfo={getSourceInfoForInterface(id)} onSwitchSource={handleSwitchInterfaceSource} programData={getProgramDataForInterface(id)} unitCoin={gameState.unitCoin} unitCoinPrice={gameState.unitCoinPrice} money={gameState.money} priceHistory={gameState.priceHistory} onBuy={handleBuy} onSell={handleSell} onSellAll={handleSellAll} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />}
                   {node.type === 'program' && (
                     <div className="relative group">
-                      <ProgramNode id={id} type={node.programType} pcConnected={connections.some(c => c.to === `${id}:program-in`)} pcData={getPCForProgram(id)} miningProgress={gameState.unitCoin} money={gameState.money} qCoin={gameState.qCoin} tumblerFeed={node.feedUC || 0} onSetOverclock={handleSetOverclock} onFeedToTumbler={handleFeedToTumbler} onUnitCoinDelta={handleProgramUnitCoinDelta} onQCoinDelta={handleProgramQCoinDelta} onSpendMoney={(amount) => setGameState(prev => ({ ...prev, money: prev.money - amount }))} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />
+                      <ProgramNode id={id} type={node.programType} pcConnected={connections.some(c => c.to === `${id}:program-in`)} vpnConnected={connections.some(c => c.to === `${id}:vpn-in`)} auctionLastReward={node.auctionLastReward ?? null} pcData={getPCForProgram(id)} miningProgress={gameState.unitCoin} money={gameState.money} qCoin={gameState.qCoin} tumblerFeed={node.feedUC || 0} onSetOverclock={handleSetOverclock} onFeedToTumbler={handleFeedToTumbler} onRunDarkAuction={handleRunDarkAuction} onUnitCoinDelta={handleProgramUnitCoinDelta} onQCoinDelta={handleProgramQCoinDelta} onSpendMoney={(amount) => setGameState(prev => ({ ...prev, money: prev.money - amount }))} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />
                       <button onClick={() => handleStoreToRack(id)} className="absolute -top-2 -right-8 w-5 h-5 rounded-full bg-indigo-600 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Store in Rack">📥</button>
                       <button onClick={() => handleDeleteNode(id)} className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-600 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Delete">✕</button>
                     </div>
@@ -2847,8 +2964,11 @@ export default function MiningGame() {
                       <ShopItem id="black-market" type="black-market" name="Black Market" specs="qCoin Exchange 12GB" price={getProgramPrice('black-market', 300)} owned={!!programUnlocks['black-market']} onBuy={handleShopBuy} alwaysBuyable currency="qcoin" />
                       <ShopItem id="variety-exe" type="black-market" name="Variety.exe" specs="Tumbler 0.5 qC/s" price={getProgramPrice('variety-exe', 100)} owned={!!programUnlocks['variety-exe']} onBuy={handleShopBuy} alwaysBuyable />
                       <ShopItem id="rrtumblr" type="black-market" name="RRtumblr.exe" specs="qC -> UC (30% fee)" price={getProgramPrice('rrtumblr', 80)} owned={!!programUnlocks['rrtumblr']} onBuy={handleShopBuy} alwaysBuyable currency="qcoin" />
+                      <ShopItem id="dark-auctions" type="black-market" name="DarkAuctions" specs="Payload auctions 12GB" price={getProgramPrice('dark-auctions', 140)} owned={!!programUnlocks['dark-auctions']} onBuy={handleShopBuy} alwaysBuyable currency="qcoin" />
+                      <ShopItem id="ghostie-vpn" type="black-market" name="GhostieVPN" specs="VPN tunnel 6GB" price={getProgramPrice('ghostie-vpn', 70)} owned={!!programUnlocks['ghostie-vpn']} onBuy={handleShopBuy} alwaysBuyable currency="qcoin" />
+                      <ShopItem id="digital-payload" type="payload" name="Digital Payload" specs="Drag into DarkAuctions" price={15} quantity={inventory['digital-payload'] || 0} draggableItem onBuy={handleShopBuy} alwaysBuyable />
                     </div>
-                    <div className="text-[10px] text-red-700 mt-1">Run hostile ops for qCoin. RRtumblr.exe converts qCoin back to UnitCoin with a 30% burn.</div>
+                    <div className="text-[10px] text-red-700 mt-1">DarkAuctions needs GhostieVPN linked. Drop Digital Payload for 1-100 qCoin.</div>
                   </div>
 
                   {/* Cooling */}
