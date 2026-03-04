@@ -991,6 +991,7 @@ const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCo
   const [feedAmount, setFeedAmount] = useState('1');
   const [blackOpsLog, setBlackOpsLog] = useState(['Signal ready. Choose an operation.']);
   const [blackOpsInput, setBlackOpsInput] = useState('');
+  const [blackOpsSession, setBlackOpsSession] = useState(null);
   const [retumblerLog, setRetumblerLog] = useState('');
   const terminalRef = useRef(null);
   const program = COMPONENTS.program[type];
@@ -1133,38 +1134,40 @@ const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCo
   };
 
   const borderColor = target === 'cpu' ? '#00d4ff' : target === 'gpu' ? '#ff6b00' : target === 'ram' ? '#b44aff' : '#22c55e';
-  const pushBlackOpsLog = (line) => setBlackOpsLog(prev => [line, ...prev].slice(0, 5));
+  const pushBlackOpsLog = (line) => setBlackOpsLog(prev => [line, ...prev].slice(0, 10));
 
-  const runBlackOp = (op) => {
+  const createHackSession = (op) => {
     const ops = {
-      phish: { label: 'PhishRun', cost: 1.5, failChance: 0.5, minMult: 1.1, maxMult: 2.2, failureMult: 0.4 },
-      exploit: { label: 'ExploitSweep', cost: 4, failChance: 0.58, minMult: 1.4, maxMult: 2.8, failureMult: 0.55 },
-      ransomware: { label: 'RansomNode', cost: 10, failChance: 0.64, minMult: 1.8, maxMult: 4.2, failureMult: 0.8 },
+      phish: { label: 'PhishRun', cost: 1.5, failChance: 0.50, minMult: 1.2, maxMult: 2.1, failureMult: 0.35, ttlMs: 30000 },
+      exploit: { label: 'ExploitSweep', cost: 4, failChance: 0.58, minMult: 1.5, maxMult: 2.9, failureMult: 0.5, ttlMs: 26000 },
+      ransomware: { label: 'RansomNode', cost: 10, failChance: 0.66, minMult: 2.0, maxMult: 4.5, failureMult: 0.75, ttlMs: 22000 },
     };
     const selected = ops[op];
-    if (!selected) return;
-    if (!pcConnected) {
-      pushBlackOpsLog(`[${selected.label}] Link a PC first.`);
-      return;
-    }
-    if ((qCoin || 0) < selected.cost) {
-      pushBlackOpsLog(`[${selected.label}] Need ${selected.cost.toFixed(2)} qC.`);
-      return;
-    }
+    if (!selected) return null;
 
-    onQCoinDelta(-selected.cost, 'blackmarket-op');
-    const roll = Math.random();
-    if (roll < selected.failChance) {
-      const penalty = selected.cost * selected.failureMult;
-      onQCoinDelta(-penalty, 'blackmarket-op');
-      pushBlackOpsLog(`[${selected.label}] Trace hit. Lost ${(selected.cost + penalty).toFixed(3)} qC.`);
-      return;
-    }
+    const randomOctet = () => Math.floor(20 + Math.random() * 220);
+    const randomHex = (len) => Array.from({ length: len }, () => 'abcdef0123456789'[Math.floor(Math.random() * 16)]).join('');
+    const ports = [21, 22, 80, 443, 8080, 1337, 3306];
+    const routes = ['bridge-7', 'socks-red', 'tor-v3', 'mask-omega'];
 
-    const mult = selected.minMult + (Math.random() * (selected.maxMult - selected.minMult));
-    const reward = selected.cost * mult;
-    onQCoinDelta(reward, 'blackmarket-op');
-    pushBlackOpsLog(`[${selected.label}] Op clean. Net +${(reward - selected.cost).toFixed(3)} qC.`);
+    return {
+      ...selected,
+      op,
+      stage: 0,
+      strikes: 0,
+      targetIp: `10.${randomOctet()}.${randomOctet()}.${randomOctet()}`,
+      port: ports[Math.floor(Math.random() * ports.length)],
+      token: randomHex(6),
+      route: routes[Math.floor(Math.random() * routes.length)],
+      expiresAt: Date.now() + selected.ttlMs,
+    };
+  };
+
+  const failHackSession = (session, reason) => {
+    const penalty = session.cost * session.failureMult;
+    onQCoinDelta(-penalty, 'blackmarket-op');
+    pushBlackOpsLog(`[${session.label}] ${reason} Lost ${penalty.toFixed(3)} qC.`);
+    setBlackOpsSession(null);
   };
 
   const executeBlackMarketCommand = (rawCommand) => {
@@ -1173,11 +1176,17 @@ const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCo
     pushBlackOpsLog(`> ${cmd}`);
 
     if (cmd === 'help') {
-      pushBlackOpsLog('Commands: run phish | run exploit | run ransomware | status | clear');
+      pushBlackOpsLog('Commands: contract <phish|exploit|ransomware> | status | clear');
+      pushBlackOpsLog('Active mission commands: scan <ip> | probe <ip:port> | inject <token> | exfil <route>');
       return;
     }
     if (cmd === 'status') {
-      pushBlackOpsLog(`Balance: ${(qCoin || 0).toFixed(4)} qC | Link: ${pcConnected ? 'UP' : 'DOWN'}`);
+      if (!blackOpsSession) {
+        pushBlackOpsLog(`Idle | Balance: ${(qCoin || 0).toFixed(4)} qC | Link: ${pcConnected ? 'UP' : 'DOWN'}`);
+      } else {
+        const msLeft = Math.max(0, blackOpsSession.expiresAt - Date.now());
+        pushBlackOpsLog(`Mission ${blackOpsSession.label} stage ${blackOpsSession.stage + 1}/4 | ${Math.ceil(msLeft / 1000)}s left | strikes ${blackOpsSession.strikes}/2`);
+      }
       return;
     }
     if (cmd === 'clear') {
@@ -1185,17 +1194,81 @@ const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCo
       return;
     }
 
-    const [action, op] = cmd.split(/\s+/);
-    if (action === 'run') {
-      if (op === 'phish' || op === 'exploit' || op === 'ransomware') {
-        runBlackOp(op);
+    const [action, arg] = cmd.split(/\s+/);
+    if (!blackOpsSession) {
+      if (action !== 'contract') {
+        pushBlackOpsLog('No active mission. Start with: contract <phish|exploit|ransomware>');
+        return;
+      }
+      const op = arg;
+      if (!op || !['phish', 'exploit', 'ransomware'].includes(op)) {
+        pushBlackOpsLog('Unknown contract. Use: contract phish | contract exploit | contract ransomware');
+        return;
+      }
+      if (!pcConnected) {
+        pushBlackOpsLog('Link a PC before requesting contracts.');
+        return;
+      }
+
+      const session = createHackSession(op);
+      if (!session) return;
+      if ((qCoin || 0) < session.cost) {
+        pushBlackOpsLog(`Insufficient qC. Need ${session.cost.toFixed(2)} qC.`);
+        return;
+      }
+
+      onQCoinDelta(-session.cost, 'blackmarket-op');
+      setBlackOpsSession(session);
+      pushBlackOpsLog(`Contract ${session.label} accepted (-${session.cost.toFixed(2)} qC).`);
+      pushBlackOpsLog(`Step 1/4: scan ${session.targetIp}`);
+      return;
+    }
+
+    if (Date.now() > blackOpsSession.expiresAt) {
+      failHackSession(blackOpsSession, 'Mission timed out.');
+      return;
+    }
+
+    const expectedByStage = [
+      `scan ${blackOpsSession.targetIp}`,
+      `probe ${blackOpsSession.targetIp}:${blackOpsSession.port}`,
+      `inject ${blackOpsSession.token}`,
+      `exfil ${blackOpsSession.route}`,
+    ];
+
+    const expected = expectedByStage[blackOpsSession.stage];
+    if (cmd !== expected) {
+      const nextStrikes = blackOpsSession.strikes + 1;
+      if (nextStrikes >= 2) {
+        failHackSession(blackOpsSession, 'Trace locked your shell.');
       } else {
-        pushBlackOpsLog('Unknown op. Use: run phish | run exploit | run ransomware');
+        setBlackOpsSession(prev => ({ ...prev, strikes: nextStrikes }));
+        pushBlackOpsLog(`Bad syntax. Expected: ${expected} (${2 - nextStrikes} strike left)`);
       }
       return;
     }
 
-    pushBlackOpsLog('Unknown command. Type help.');
+    const nextStage = blackOpsSession.stage + 1;
+    if (nextStage < 4) {
+      setBlackOpsSession(prev => ({ ...prev, stage: nextStage }));
+      pushBlackOpsLog(`Stage ${nextStage}/4 complete.`);
+      pushBlackOpsLog(`Step ${nextStage + 1}/4: ${expectedByStage[nextStage]}`);
+      return;
+    }
+
+    const roll = Math.random();
+    if (roll < blackOpsSession.failChance) {
+      failHackSession(blackOpsSession, 'Countermeasure triggered on exfil.');
+      return;
+    }
+
+    const msLeft = Math.max(0, blackOpsSession.expiresAt - Date.now());
+    const speedBonus = 1 + Math.min(0.2, (msLeft / blackOpsSession.ttlMs) * 0.2);
+    const mult = blackOpsSession.minMult + (Math.random() * (blackOpsSession.maxMult - blackOpsSession.minMult));
+    const reward = blackOpsSession.cost * mult * speedBonus;
+    onQCoinDelta(reward, 'blackmarket-op');
+    pushBlackOpsLog(`[${blackOpsSession.label}] Exfil complete. Net +${(reward - blackOpsSession.cost).toFixed(3)} qC.`);
+    setBlackOpsSession(null);
   };
 
   // BitWatcher rendering
@@ -1310,9 +1383,14 @@ const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCo
         <div className="rounded p-2.5" style={{ background: 'rgba(0,0,0,0.55)', border: '1px solid rgba(220,38,38,0.45)' }}>
           <div className="text-red-400 text-xs font-mono mb-1">ACCESS: HOSTILE OPS</div>
           <div className="text-gray-300 text-xs leading-relaxed mb-2">
-            Deploy malicious scripts for qCoin gain. High risk operations can backfire.
+            Contracts are multi-step intrusions. Mistypes and timeouts trigger trace penalties.
           </div>
           <div className="text-[10px] text-red-500 font-mono mb-2">Type `help` in the terminal to see commands.</div>
+          {blackOpsSession && (
+            <div className="text-[10px] text-red-400 font-mono mb-2">
+              ACTIVE {blackOpsSession.label} • Stage {blackOpsSession.stage + 1}/4 • {Math.ceil(Math.max(0, blackOpsSession.expiresAt - Date.now()) / 1000)}s • Strikes {blackOpsSession.strikes}/2
+            </div>
+          )}
 
           <div className="rounded bg-black/70 border border-red-900/50 text-[10px] mb-2">
             <div className="p-2 space-y-1 min-h-[86px] max-h-[120px] overflow-y-auto">
