@@ -1134,7 +1134,7 @@ const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCo
   };
 
   const borderColor = target === 'cpu' ? '#00d4ff' : target === 'gpu' ? '#ff6b00' : target === 'ram' ? '#b44aff' : '#22c55e';
-  const pushBlackOpsLog = (line) => setBlackOpsLog(prev => [line, ...prev].slice(0, 10));
+  const pushBlackOpsLog = (line) => setBlackOpsLog(prev => [...prev, line].slice(-14));
 
   const createHackSession = (op) => {
     const ops = {
@@ -1171,7 +1171,7 @@ const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCo
   };
 
   const executeBlackMarketCommand = (rawCommand) => {
-    const cmd = (rawCommand || '').trim().toLowerCase();
+    const cmd = (rawCommand || '').trim().toLowerCase().replace(/\s+/g, ' ');
     if (!cmd) return;
     pushBlackOpsLog(`> ${cmd}`);
 
@@ -1194,14 +1194,18 @@ const ProgramNode = ({ id, type, pcConnected, pcData, miningProgress, money, qCo
       return;
     }
 
-    const [action, arg] = cmd.split(/\s+/);
+    const tokens = cmd.split(' ');
+    const action = tokens[0];
     if (!blackOpsSession) {
       if (action !== 'contract') {
         pushBlackOpsLog('No active mission. Start with: contract <phish|exploit|ransomware>');
         return;
       }
-      const op = arg;
-      if (!op || !['phish', 'exploit', 'ransomware'].includes(op)) {
+      // Accept forgiving input like "contract exploit,", "contract phish or exploit"
+      const cleaned = tokens.slice(1).join(' ').replace(/[^a-z\s]/g, ' ');
+      const opTokens = cleaned.split(/\s+/).filter(Boolean);
+      const op = opTokens.find((t) => ['phish', 'exploit', 'ransomware'].includes(t));
+      if (!op) {
         pushBlackOpsLog('Unknown contract. Use: contract phish | contract exploit | contract ransomware');
         return;
       }
@@ -1936,7 +1940,7 @@ export default function MiningGame() {
   // Handle cheat code
   const handleCheatSubmit = () => {
     if (cheatInput.toUpperCase() === 'MOTHERLODE') {
-      setGameState(prev => ({ ...prev, money: prev.money + 100000 }));
+      setGameState(prev => ({ ...prev, money: prev.money + 1000, unitCoin: prev.unitCoin + 1000, qCoin: prev.qCoin + 1000 }));
       setCheatInput('');
       setCheatTerminalOpen(false);
     } else {
