@@ -74,9 +74,11 @@ const COMPONENTS = {
 
 // Transformer definitions
 const TRANSFORMERS = {
-  'transformer-small': { name: 'gUnit 500W Battery', wattage: 500, tickFee: 0.003, price: 50 },
-  'transformer-medium': { name: 'gUnit 1000W Battery', wattage: 1000, tickFee: 0.009, price: 500 },
-  'transformer-large': { name: 'gUnit Pro Zenith 2500W', wattage: 2500, tickFee: 0.024, price: 1200 },
+  'transformer-small': { name: 'gUnit 500W Battery', wattage: 500, baseFeePerSec: 0.0012, energyRatePerKWh: 0.012, price: 50 },
+  'transformer-medium': { name: 'gUnit 1000W Battery', wattage: 1000, baseFeePerSec: 0.0022, energyRatePerKWh: 0.011, price: 500 },
+  'transformer-large': { name: 'gUnit Pro Zenith 2500W', wattage: 2500, baseFeePerSec: 0.0038, energyRatePerKWh: 0.0105, price: 1200 },
+  'transformer-eco': { name: 'gUnit ECO 1500W', wattage: 1500, baseFeePerSec: 0.002, energyRatePerKWh: 0.0092, price: 900 },
+  'transformer-ultra': { name: 'gUnit Titan 5000W', wattage: 5000, baseFeePerSec: 0.0065, energyRatePerKWh: 0.0108, price: 3000 },
 };
 
 const MINER_TIERS = {
@@ -91,10 +93,21 @@ const OVERHEAT_THRESHOLD = 95;
 const ASIC_HUB_POWER_DRAW = 45;
 const WINSLAVE_HUB_POWER_DRAW = 35;
 const STARTER_GFI_DEVICE_WATTAGE = 220;
+const GRID_BASE_RATE_PER_KWH = 0.014;
+const INTERFACE_POWER_DRAW = 10;
+const INTERFACE_HUB_POWER_DRAW = 18;
+const PROGRAM_RACK_POWER_DRAW = 9;
 const PRICE_TARGET = 2.0;
 const PRICE_FLOOR = 1.2;
 const PRICE_CEILING = 5.0;
 const TICK_MS = 1000;
+
+const getTransformerFeePerSec = (transformerType, loadW = 0, overloaded = false) => {
+  const config = TRANSFORMERS[transformerType];
+  if (!config) return 0;
+  const overloadMult = overloaded ? 1.25 : 1;
+  return (config.baseFeePerSec + ((Math.max(0, loadW) / 1000) * config.energyRatePerKWh)) * overloadMult;
+};
 
 // Calculate UGS
 const calculateUGS = (cpu, gpu, ramSlots, cpuOC = 0, gpuOC = 0, ramOC = 0) => {
@@ -286,15 +299,22 @@ const PowerGridNode = ({ connected, totalWattage, onStartConnection, onEndConnec
 );
 
 // Transformer
-const TransformerNode = ({ id, type, powerConnected, outputConnected, onStartConnection, onEndConnection, onDisconnect }) => {
+const TransformerNode = ({ id, type, powerConnected, outputConnected, loadWatts = 0, estFeePerSec = 0, overloaded = false, onStartConnection, onEndConnection, onDisconnect }) => {
   const data = TRANSFORMERS[type];
+  const utilization = data.wattage > 0 ? (loadWatts / data.wattage) * 100 : 0;
   return (
-    <div style={{ background: 'linear-gradient(135deg, rgba(50,40,20,0.95), rgba(35,28,12,0.98))', border: `2px solid ${powerConnected ? '#ff9500' : '#555'}`, borderRadius: '10px', padding: '12px', minWidth: '180px', boxShadow: powerConnected ? '0 0 20px rgba(255,149,0,0.3)' : 'none' }}>
+    <div style={{ background: 'linear-gradient(135deg, rgba(50,40,20,0.95), rgba(35,28,12,0.98))', border: `2px solid ${overloaded ? '#ef4444' : powerConnected ? '#ff9500' : '#555'}`, borderRadius: '10px', padding: '12px', minWidth: '180px', boxShadow: overloaded ? '0 0 24px rgba(239,68,68,0.35)' : powerConnected ? '0 0 20px rgba(255,149,0,0.3)' : 'none' }}>
       <div className="flex items-center gap-2 mb-2">
         <span className="text-xl">🔋</span>
         <div>
           <div className="text-orange-400 font-bold text-xs">{data.name}</div>
-          <div className="text-orange-600 text-xs">+{data.wattage}W • ${data.tickFee}/s</div>
+          <div className="text-orange-600 text-xs">{data.wattage}W • ${estFeePerSec.toFixed(4)}/s</div>
+        </div>
+      </div>
+      <div className="mb-2 px-2 py-1 rounded bg-black/35 border border-orange-900/30">
+        <div className="flex items-center justify-between text-[10px]">
+          <span className="text-gray-400">Load</span>
+          <span className={`${overloaded ? 'text-red-400' : 'text-orange-300'} font-mono`}>{Math.round(loadWatts)}W ({utilization.toFixed(0)}%)</span>
         </div>
       </div>
       <div className="flex items-center gap-2 mb-2 p-1.5 rounded bg-black/40">
@@ -2215,6 +2235,58 @@ export default function MiningGame() {
     return source.type === 'grid' || source.type === 'transformer';
   }, [getPowerSource, inboundPowerByNode, nodes]);
 
+  const getNodePowerDemand = useCallback((nodeId, node) => {
+    if (!node) return 0;
+    if (node.type === 'pc') {
+      return calculatePowerDraw(node.cpu, node.gpu, node.ram, node.cooling, node.cpuOC || 0, node.gpuOC || 0, node.ramOC || 0);
+    }
+    if (node.type === 'miner') {
+      const tier = MINER_TIERS[node.minerType] || MINER_TIERS['miner-t1'];
+      return tier.power;
+    }
+    if (node.type === 'asic-hub') return ASIC_HUB_POWER_DRAW;
+    if (node.type === 'winslave-asic-hub') return WINSLAVE_HUB_POWER_DRAW;
+    if (node.type === 'interface') return INTERFACE_POWER_DRAW;
+    if (node.type === 'interface-hub') return INTERFACE_HUB_POWER_DRAW;
+    if (node.type === 'program-rack') return PROGRAM_RACK_POWER_DRAW;
+    return 0;
+  }, []);
+
+  const powerStats = useMemo(() => {
+    const transformerLoadById = {};
+    let gridLoadW = 0;
+
+    Object.entries(nodes).forEach(([id, node]) => {
+      if (!hasPower(id)) return;
+      const demand = getNodePowerDemand(id, node);
+      if (demand <= 0) return;
+      const source = getPowerSource(id);
+      if (!source) return;
+      if (source.type === 'transformer') {
+        transformerLoadById[source.id] = (transformerLoadById[source.id] || 0) + demand;
+      } else if (source.type === 'grid') {
+        gridLoadW += demand;
+      }
+    });
+
+    const transformerMetaById = {};
+    Object.entries(transformerLoadById).forEach(([transformerId, loadW]) => {
+      const transformerNode = nodes[transformerId];
+      const transformerData = transformerNode ? TRANSFORMERS[transformerNode.transformerType] : null;
+      if (!transformerData) return;
+      const cap = transformerData.wattage;
+      const overloadFactor = loadW > 0 ? Math.min(1, cap / loadW) : 1;
+      transformerMetaById[transformerId] = {
+        loadW,
+        capW: cap,
+        overloaded: loadW > cap,
+        overloadFactor,
+      };
+    });
+
+    return { transformerLoadById, transformerMetaById, gridLoadW };
+  }, [nodes, hasPower, getNodePowerDemand, getPowerSource]);
+
   const hasDisplay = useCallback((nodeId) => connections.some(c => c.from === `${nodeId}:display-out`), [connections]);
 
   const getMinerSourcesForAsicHub = useCallback((hubId) => {
@@ -2382,7 +2454,7 @@ export default function MiningGame() {
     const interval = setInterval(() => {
       setNodes(prev => {
         const updated = { ...prev };
-        let transformerFees = 0;
+        let powerCostPerSec = 0;
         
         Object.entries(updated).forEach(([id, node]) => {
           if (node.type === 'pc') {
@@ -2406,15 +2478,23 @@ export default function MiningGame() {
             }
 
             updated[id] = { ...node, currentTemp: Math.round(newTemp), isOverheated, cpuOC, gpuOC, ramOC };
-          } else if (node.type === 'transformer' && hasPower(id)) {
-            transformerFees += TRANSFORMERS[node.transformerType].tickFee;
           }
         });
 
-        if (transformerFees > 0) {
+        Object.entries(powerStats.transformerMetaById).forEach(([transformerId, meta]) => {
+          const transformerNode = updated[transformerId];
+          if (!transformerNode || transformerNode.type !== 'transformer') return;
+          powerCostPerSec += getTransformerFeePerSec(transformerNode.transformerType, meta.loadW, meta.overloaded);
+        });
+
+        if (powerStats.gridLoadW > 0) {
+          powerCostPerSec += (powerStats.gridLoadW / 1000) * GRID_BASE_RATE_PER_KWH;
+        }
+
+        if (powerCostPerSec > 0) {
           setGameState(prevState => ({
             ...prevState,
-            money: Math.max(0, prevState.money - (transformerFees * tickSeconds)),
+            money: Math.max(0, prevState.money - (powerCostPerSec * tickSeconds)),
           }));
         }
 
@@ -2422,7 +2502,7 @@ export default function MiningGame() {
       });
     }, TICK_MS);
     return () => clearInterval(interval);
-  }, [hasPower, connections]);
+  }, [hasPower, powerStats]);
 
   // Dedicated Variety.exe conversion tick (qCoin generation).
   // Runs separately from mining power logic so qCoin conversion stays reliable.
@@ -2724,6 +2804,8 @@ export default function MiningGame() {
         'transformer-small': { type: 'transformer', transformerType: 'transformer-small', position: { x: 100 + Math.random() * 100, y: 150 + Math.random() * 100 } },
         'transformer-medium': { type: 'transformer', transformerType: 'transformer-medium', position: { x: 100 + Math.random() * 100, y: 150 + Math.random() * 100 } },
         'transformer-large': { type: 'transformer', transformerType: 'transformer-large', position: { x: 100 + Math.random() * 100, y: 150 + Math.random() * 100 } },
+        'transformer-eco': { type: 'transformer', transformerType: 'transformer-eco', position: { x: 100 + Math.random() * 100, y: 150 + Math.random() * 100 } },
+        'transformer-ultra': { type: 'transformer', transformerType: 'transformer-ultra', position: { x: 100 + Math.random() * 100, y: 150 + Math.random() * 100 } },
         'cpuburner': { type: 'program', programType: 'cpuburner', position: { x: 400 + Math.random() * 100, y: 200 + Math.random() * 100 } },
         'gpuburner': { type: 'program', programType: 'gpuburner', position: { x: 420 + Math.random() * 100, y: 220 + Math.random() * 100 } },
         'ramburner': { type: 'program', programType: 'ramburner', position: { x: 440 + Math.random() * 100, y: 240 + Math.random() * 100 } },
@@ -2909,14 +2991,26 @@ export default function MiningGame() {
   };
 
   // Calculate totals
-  const totalUGS = Object.entries(nodes).reduce((sum, [id, node]) => {
-    if (node.type === 'pc' && hasPower(id) && !node.isOverheated) return sum + calculateUGS(node.cpu, node.gpu, node.ram, node.cpuOC || 0, node.gpuOC || 0, node.ramOC || 0);
-    if (node.type === 'miner' && hasPower(id)) {
-      const tier = MINER_TIERS[node.minerType] || MINER_TIERS['miner-t1'];
-      return sum + tier.ugsPerMin;
+  const totalUGS = useMemo(() => Object.entries(nodes).reduce((sum, [id, node]) => {
+    if (!hasPower(id)) return sum;
+
+    const source = getPowerSource(id);
+    const overloadFactor = source?.type === 'transformer'
+      ? (powerStats.transformerMetaById[source.id]?.overloadFactor ?? 1)
+      : 1;
+
+    if (node.type === 'pc' && !node.isOverheated) {
+      const pcUGS = calculateUGS(node.cpu, node.gpu, node.ram, node.cpuOC || 0, node.gpuOC || 0, node.ramOC || 0);
+      return sum + (pcUGS * overloadFactor);
     }
+
+    if (node.type === 'miner') {
+      const tier = MINER_TIERS[node.minerType] || MINER_TIERS['miner-t1'];
+      return sum + (tier.ugsPerMin * overloadFactor);
+    }
+
     return sum;
-  }, 0);
+  }, 0), [nodes, hasPower, getPowerSource, powerStats.transformerMetaById]);
 
   // Stable UnitCoin accrual tick from live UGS.
   useEffect(() => {
@@ -3032,7 +3126,18 @@ export default function MiningGame() {
                   {node.type === 'power-grid' && <PowerGridNode connected={connections.some(c => c.from === `${id}:power-out`)} totalWattage={totalWattage} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />}
                   {node.type === 'transformer' && (
                     <div className="relative group">
-                      <TransformerNode id={id} type={node.transformerType} powerConnected={hasPower(id)} outputConnected={connections.some(c => c.from === `${id}:power-out`)} onStartConnection={handleStartConnection} onEndConnection={handleEndConnection} onDisconnect={handleDisconnect} />
+                      <TransformerNode
+                        id={id}
+                        type={node.transformerType}
+                        powerConnected={hasPower(id)}
+                        outputConnected={connections.some(c => c.from === `${id}:power-out`)}
+                        loadWatts={powerStats.transformerMetaById[id]?.loadW || 0}
+                        estFeePerSec={getTransformerFeePerSec(node.transformerType, powerStats.transformerMetaById[id]?.loadW || 0, !!powerStats.transformerMetaById[id]?.overloaded)}
+                        overloaded={!!powerStats.transformerMetaById[id]?.overloaded}
+                        onStartConnection={handleStartConnection}
+                        onEndConnection={handleEndConnection}
+                        onDisconnect={handleDisconnect}
+                      />
                       <button onClick={() => handleDeleteNode(id)} className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-600 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Delete">✕</button>
                     </div>
                   )}
@@ -3130,9 +3235,11 @@ export default function MiningGame() {
                   <div>
                     <div className="text-orange-500 mb-1 text-xs">🔋 Batteries</div>
                     <div className="space-y-1">
-                      <ShopItem id="transformer-small" type="transformer" name="gUnit 500W" specs="$0.003/s" price={50} owned={false} onBuy={handleShopBuy} alwaysBuyable />
-                      <ShopItem id="transformer-medium" type="transformer" name="gUnit 1000W" specs="$0.009/s" price={500} owned={false} onBuy={handleShopBuy} alwaysBuyable />
-                      <ShopItem id="transformer-large" type="transformer" name="gUnit Pro Zenith" specs="2500W $0.024/s" price={1200} owned={false} onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="transformer-small" type="transformer" name={TRANSFORMERS['transformer-small'].name} specs={`${TRANSFORMERS['transformer-small'].wattage}W • base $${TRANSFORMERS['transformer-small'].baseFeePerSec.toFixed(4)}/s`} price={TRANSFORMERS['transformer-small'].price} owned={false} onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="transformer-medium" type="transformer" name={TRANSFORMERS['transformer-medium'].name} specs={`${TRANSFORMERS['transformer-medium'].wattage}W • base $${TRANSFORMERS['transformer-medium'].baseFeePerSec.toFixed(4)}/s`} price={TRANSFORMERS['transformer-medium'].price} owned={false} onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="transformer-eco" type="transformer" name={TRANSFORMERS['transformer-eco'].name} specs={`${TRANSFORMERS['transformer-eco'].wattage}W • cheap/kWh`} price={TRANSFORMERS['transformer-eco'].price} owned={false} onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="transformer-large" type="transformer" name={TRANSFORMERS['transformer-large'].name} specs={`${TRANSFORMERS['transformer-large'].wattage}W • balanced`} price={TRANSFORMERS['transformer-large'].price} owned={false} onBuy={handleShopBuy} alwaysBuyable />
+                      <ShopItem id="transformer-ultra" type="transformer" name={TRANSFORMERS['transformer-ultra'].name} specs={`${TRANSFORMERS['transformer-ultra'].wattage}W • heavy load`} price={TRANSFORMERS['transformer-ultra'].price} owned={false} onBuy={handleShopBuy} alwaysBuyable />
                     </div>
                   </div>
 
